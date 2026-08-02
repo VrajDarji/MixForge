@@ -66,15 +66,37 @@ enforced at lint time, not just by convention) without the overhead.
 Move to real workspace packages later, specifically when `apps/cli` and
 `apps/desktop` need genuinely independent dependency graphs — not before.
 
-**Test file convention:** tests live in a `__test__/` folder inside the
-module they cover, never colocated beside the source file. `src/core/`'s
-tests live in `src/core/__test__/`, `src/graph/`'s in `src/graph/__test__/`,
-and so on for every module below. This keeps each module folder's top level
-to source files only, and gives each module one obvious place to look for
-its tests. Both `jest.config.js`'s `testMatch` and `eslint.config.js`'s
-`files` glob already recurse (`src/**/*.test.ts` / `src/**/*.ts`), so no
-tooling change is needed when a new module adopts this — just create the
-`__test__/` folder and write into it.
+**File convention:** every module folder has exactly this shape — no
+freeform file naming inside a module:
+
+- `types.ts` — every type/interface declaration for the module. No logic.
+- `lib.ts` — the module's core functions (algorithms, pure data-shaping
+  functions). Imports its types from `./types`.
+- `utils.ts` — small pure helpers that are neither domain types nor core
+  logic. Present even when empty (`export {};`), so there's always one
+  obvious place to add the first helper rather than a new ad hoc file.
+- `index.ts` — the one barrel per folder: `export * from './types'`,
+  `export * from './lib'`, `export * from './utils'`, nothing else.
+- `__test__/` — tests live here, never colocated beside the source file,
+  named after what they cover (`types.test.ts`, `lib.test.ts`), plus
+  `index.test.ts` for barrel-level tests. This keeps each module folder's
+  top level to source files only, and gives each module one obvious place
+  to look for its tests.
+
+`src/core/` follows this today: `types.ts` holds `Measurement`, `ChunkNode`,
+`TransitionEdge`, `MusicGraph`, `PlannerConfig`, `SearchState`,
+`SearchResources`, `SearchProblem`, `RemixPlan`, and every other Phase 1
+type; `lib.ts` holds the two functions Phase 1 permits (`measurement()`,
+`mergeKey()`); `utils.ts` is currently empty. Every future module
+(`graph/`, `scorer/`, `planner/`, ...) follows the same four-file shape —
+a module that grows past that (e.g. `lib.ts` needing to split into
+multiple algorithm files) should use subfolders under the same names
+(`lib/beamSearch.ts`, `lib/diverseSelection.ts`) rather than inventing a
+fifth top-level category.
+
+Both `jest.config.js`'s `testMatch` and `eslint.config.js`'s `files` glob
+already recurse (`src/**/*.test.ts` / `src/**/*.ts`), so no tooling change
+is needed when a new module adopts this — just create the files.
 
 ```
 mixforge/
@@ -83,7 +105,11 @@ mixforge/
                     #           MusicGraph, PlannerConfig, SearchState,
                     #           SearchResources, SearchProblem, RemixPlan.
                     #           No algorithms. No DSP. No planner logic.
-      __test__/    # core's tests — one file per source file, same name.
+      types.ts      # every Phase 1 type declaration
+      lib.ts        # measurement(), mergeKey() — the only two functions
+      utils.ts      # empty for now
+      __test__/     # types.test.ts, lib.test.ts, index.test.ts
+      index.ts      # barrel: re-exports types.ts + lib.ts + utils.ts
     graph/          # Phase 2/5 — MusicGraph implementation + persistence.
                     #           Depends on core only.
     scorer/         # Phase 3 — calibration, nodeScore, edgeScore, pathScore.
