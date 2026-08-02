@@ -9,6 +9,8 @@ export interface SearchResources {
   readonly elapsedDurationBucket: number;
   readonly energyBucket: number;
   readonly currentKeyBucket: string;
+  /** Class A per ADR-007 ("current node" is listed as an exact resource in design.md §14). */
+  readonly currentNodeId: string;
 
   // --- Class B: approximate/compressed summaries, exist to make merging feasible ---
   readonly songDiversityCount: number;
@@ -21,7 +23,8 @@ export interface SearchResources {
 }
 
 export interface SearchState {
-  readonly currentNodeId: string;
+  // currentNodeId lives on `resources` (it's Class A per ADR-007) — do not
+  // duplicate it here; reference `resources.currentNodeId` instead.
   readonly accumulatedScore: number;
   readonly resources: SearchResources;
 }
@@ -36,6 +39,7 @@ export function mergeKey(resources: SearchResources): string {
     resources.elapsedDurationBucket,
     resources.energyBucket,
     resources.currentKeyBucket,
+    resources.currentNodeId,
     resources.songDiversityCount,
     resources.recentSectionTypes.join(','),
   ].join('|');

@@ -11,6 +11,12 @@ export interface SearchProblem<TNode, TResource, TEdge> {
   getOutgoing(node: TNode): readonly TEdge[];
   updateResources(resource: TResource, edge: TEdge): TResource;
   isValid(resource: TResource): boolean;
+  /**
+   * Must preserve the ADR-007 Class A/B-only merge invariant. For the concrete
+   * `MusicSearchProblem` instantiation, this MUST delegate to the standalone
+   * `mergeKey()` function exported from `./searchState` — do not reimplement
+   * key construction here, or Class C fields could silently leak back in.
+   */
   mergeKey(resource: TResource): string;
 
   /** Non-compensatory (ADR-005): implementers should use product/geomean/min-style composition. */

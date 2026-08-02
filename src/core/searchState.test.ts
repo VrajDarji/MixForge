@@ -5,6 +5,7 @@ function baseResources(overrides: Partial<SearchResources> = {}): SearchResource
     elapsedDurationBucket: 120,
     energyBucket: 3,
     currentKeyBucket: '8A',
+    currentNodeId: 'A2',
     songDiversityCount: 2,
     recentSectionTypes: ['verse', 'chorus'],
     usedChunkIds: new Set(['A1', 'A2']),
@@ -36,6 +37,12 @@ describe('mergeKey()', () => {
   it('produces a different key when a Class A field (currentKeyBucket) differs', () => {
     const a = baseResources({ currentKeyBucket: '8A' });
     const b = baseResources({ currentKeyBucket: '9A' });
+    expect(mergeKey(a)).not.toBe(mergeKey(b));
+  });
+
+  it('produces a different key when a Class A field (currentNodeId) differs', () => {
+    const a = baseResources({ currentNodeId: 'A2' });
+    const b = baseResources({ currentNodeId: 'B7' });
     expect(mergeKey(a)).not.toBe(mergeKey(b));
   });
 

@@ -26,6 +26,7 @@ function fixtureResources(): SearchResources {
     elapsedDurationBucket: 0,
     energyBucket: 0,
     currentKeyBucket: '8A',
+    currentNodeId: 'A1',
     songDiversityCount: 1,
     recentSectionTypes: [],
     usedChunkIds: new Set(),
