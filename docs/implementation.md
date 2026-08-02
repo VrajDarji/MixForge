@@ -358,7 +358,7 @@ function planRemix(
     const candidates: SearchState[] = [];
 
     for (const state of beam) {
-      for (const edge of graph.getOutgoingEdges(state.currentNodeId)) {
+      for (const edge of graph.getOutgoingEdges(state.resources.currentNodeId)) {
         const evalResult = evaluateEdge(edge, config);
         if (!evalResult.feasible) continue;                 // Stage 2 hard reject
 
@@ -371,7 +371,7 @@ function planRemix(
           + evaluateNode(nextNode, config)
           + evaluatePath(nextResources, config);
 
-        candidates.push({ currentNodeId: edge.to, accumulatedScore: score, resources: nextResources });
+        candidates.push({ accumulatedScore: score, resources: nextResources }); // nextResources.currentNodeId === edge.to (ADR-007 Class A)
       }
     }
 
@@ -429,10 +429,10 @@ function selectDiverseBeam(candidates: SearchState[], width: number): SearchStat
   const nodeCounts = new Map<string, number>();
   for (const c of merged) {
     if (selected.length >= width) break;
-    const count = nodeCounts.get(c.currentNodeId) ?? 0;
+    const count = nodeCounts.get(c.resources.currentNodeId) ?? 0;
     if (count >= 1 && selected.length < width - 1) continue;
     selected.push(c);
-    nodeCounts.set(c.currentNodeId, count + 1);
+    nodeCounts.set(c.resources.currentNodeId, count + 1);
   }
   return selected;
 }
