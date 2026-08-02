@@ -1,4 +1,4 @@
-import { MusicGraph } from './musicGraph';
+import { MusicGraph } from '../musicGraph';
 
 describe('MusicGraph interface', () => {
   it('is satisfied by a minimal stub object', () => {

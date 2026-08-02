@@ -1,6 +1,6 @@
-import { measurement } from './measurement';
-import { ChunkNode } from './nodeSignals';
-import { TransitionEdge } from './edgeSignals';
+import { measurement } from '../measurement';
+import { ChunkNode } from '../nodeSignals';
+import { TransitionEdge } from '../edgeSignals';
 
 describe('signal types', () => {
   it('constructs a well-formed ChunkNode', () => {

@@ -1,6 +1,6 @@
-import { Renderer, RenderOptions, RenderedAudio } from './renderer';
-import { RemixPlan } from './remixPlan';
-import { MusicGraph } from './musicGraph';
+import { Renderer, RenderOptions, RenderedAudio } from '../renderer';
+import { RemixPlan } from '../remixPlan';
+import { MusicGraph } from '../musicGraph';
 
 describe('Renderer interface', () => {
   it('is satisfied by a stub async implementation', async () => {

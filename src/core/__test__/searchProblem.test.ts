@@ -1,9 +1,9 @@
-import { MusicSearchProblem } from './searchProblem';
-import { ChunkNode } from './nodeSignals';
-import { TransitionEdge } from './edgeSignals';
-import { SearchResources } from './searchState';
-import { PlannerConfig } from './plannerConfig';
-import { measurement } from './measurement';
+import { MusicSearchProblem } from '../searchProblem';
+import { ChunkNode } from '../nodeSignals';
+import { TransitionEdge } from '../edgeSignals';
+import { SearchResources } from '../searchState';
+import { PlannerConfig } from '../plannerConfig';
+import { measurement } from '../measurement';
 
 function fixtureNode(id: string): ChunkNode {
   return {

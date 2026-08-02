@@ -1,4 +1,4 @@
-import { measurement, Measurement } from './measurement';
+import { measurement, Measurement } from '../measurement';
 
 describe('measurement()', () => {
   it('builds a Measurement with all four fields set exactly as passed', () => {

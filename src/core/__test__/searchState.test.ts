@@ -1,4 +1,4 @@
-import { SearchResources, mergeKey } from './searchState';
+import { SearchResources, mergeKey } from '../searchState';
 
 function baseResources(overrides: Partial<SearchResources> = {}): SearchResources {
   return {

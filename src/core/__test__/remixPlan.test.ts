@@ -1,4 +1,4 @@
-import { RemixPlan } from './remixPlan';
+import { RemixPlan } from '../remixPlan';
 
 describe('RemixPlan', () => {
   it('constructs a well-formed plan including diagnostics', () => {

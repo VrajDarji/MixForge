@@ -1,4 +1,4 @@
-import * as core from './index';
+import * as core from '../index';
 
 describe('src/core barrel export', () => {
   it('re-exports the measurement factory', () => {

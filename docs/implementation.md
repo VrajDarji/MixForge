@@ -66,6 +66,16 @@ enforced at lint time, not just by convention) without the overhead.
 Move to real workspace packages later, specifically when `apps/cli` and
 `apps/desktop` need genuinely independent dependency graphs — not before.
 
+**Test file convention:** tests live in a `__test__/` folder inside the
+module they cover, never colocated beside the source file. `src/core/`'s
+tests live in `src/core/__test__/`, `src/graph/`'s in `src/graph/__test__/`,
+and so on for every module below. This keeps each module folder's top level
+to source files only, and gives each module one obvious place to look for
+its tests. Both `jest.config.js`'s `testMatch` and `eslint.config.js`'s
+`files` glob already recurse (`src/**/*.test.ts` / `src/**/*.ts`), so no
+tooling change is needed when a new module adopts this — just create the
+`__test__/` folder and write into it.
+
 ```
 mixforge/
   src/
@@ -73,6 +83,7 @@ mixforge/
                     #           MusicGraph, PlannerConfig, SearchState,
                     #           SearchResources, SearchProblem, RemixPlan.
                     #           No algorithms. No DSP. No planner logic.
+      __test__/    # core's tests — one file per source file, same name.
     graph/          # Phase 2/5 — MusicGraph implementation + persistence.
                     #           Depends on core only.
     scorer/         # Phase 3 — calibration, nodeScore, edgeScore, pathScore.
