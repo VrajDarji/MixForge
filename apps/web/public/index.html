@@ -176,6 +176,34 @@
   .file-drop input[type="file"] {
     display: none;
   }
+  /* Small static vinyl disc glyph — purely decorative cue that this drop
+     zone is for tracks, echoing the .vinyl-spin loader used elsewhere. */
+  .drop-icon {
+    display: inline-block;
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    margin-right: 8px;
+    vertical-align: -6px;
+    background:
+      radial-gradient(circle at center, #060608 0 3px, transparent 3.5px),
+      repeating-conic-gradient(rgba(255,255,255,0.1) 0deg 8deg, transparent 8deg 16deg),
+      linear-gradient(135deg, var(--pink), var(--cyan));
+    box-shadow: 0 0 0 1px var(--border);
+  }
+  /* Small monospace pill labeling each panel like a mixer channel strip. */
+  .ch-badge {
+    display: inline-block;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 0.68rem;
+    letter-spacing: 0.08em;
+    color: var(--cyan);
+    border: 1px solid rgba(34,229,255,0.35);
+    background: rgba(34,229,255,0.08);
+    padding: 2px 8px;
+    border-radius: 999px;
+    margin-bottom: 14px;
+  }
   #file-list {
     margin-top: 12px;
     font-size: 0.85rem;
@@ -188,6 +216,10 @@
   }
   button {
     width: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
     background: linear-gradient(120deg, var(--pink), #ff6a3d 55%, var(--cyan) 130%);
     color: #0a0a10;
     border: none;
@@ -199,11 +231,27 @@
     cursor: pointer;
     transition: transform 0.12s ease, box-shadow 0.15s ease, filter 0.15s ease;
     box-shadow: 0 6px 24px rgba(255,45,120,0.25);
+    animation: btnGlowPulse 2.4s ease-in-out infinite;
+  }
+  /* Idle standby-LED breathing glow — stops on hover (hover shadow takes
+     over) and on disabled (mid-render) so it doesn't compete for attention. */
+  @keyframes btnGlowPulse {
+    0%, 100% { box-shadow: 0 6px 24px rgba(255,45,120,0.25); }
+    50% { box-shadow: 0 6px 30px rgba(34,229,255,0.35); }
+  }
+  button .play-glyph {
+    width: 0;
+    height: 0;
+    border-top: 7px solid transparent;
+    border-bottom: 7px solid transparent;
+    border-left: 11px solid currentColor;
+    flex-shrink: 0;
   }
   button:hover:not(:disabled) {
     filter: brightness(1.06);
     box-shadow: 0 8px 30px rgba(255,45,120,0.4);
     transform: translateY(-1px);
+    animation-play-state: paused;
   }
   button:active:not(:disabled) {
     transform: translateY(0);
@@ -212,6 +260,10 @@
     opacity: 0.5;
     cursor: not-allowed;
     box-shadow: none;
+    animation: none;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    button { animation: none; }
   }
   .status {
     padding: 12px 14px;
@@ -273,6 +325,122 @@
     margin-bottom: 12px;
   }
   #fallback-warning[hidden] { display: none; }
+  /* Mixer-fader styling for the range inputs, incl. a live gradient fill
+     driven by --val (set from JS on input) so it reads like a channel gain. */
+  input[type="range"] {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 100%;
+    height: 6px;
+    border-radius: 3px;
+    background: linear-gradient(90deg, var(--pink) 0%, var(--cyan) var(--val, 50%), var(--panel-2) var(--val, 50%), var(--panel-2) 100%);
+    border: 1px solid var(--border);
+    outline: none;
+    margin: 10px 0 4px;
+    cursor: pointer;
+  }
+  input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 14px;
+    height: 24px;
+    border-radius: 3px;
+    background: linear-gradient(180deg, #fff, #cbced8);
+    border: 1px solid #05050a;
+    box-shadow: 0 0 0 3px rgba(255,45,120,0.25), 0 2px 6px rgba(0,0,0,0.5);
+  }
+  input[type="range"]::-moz-range-thumb {
+    width: 14px;
+    height: 24px;
+    border-radius: 3px;
+    background: linear-gradient(180deg, #fff, #cbced8);
+    border: 1px solid #05050a;
+    box-shadow: 0 0 0 3px rgba(255,45,120,0.25), 0 2px 6px rgba(0,0,0,0.5);
+  }
+  input[type="range"]::-moz-range-track {
+    height: 6px;
+    border-radius: 3px;
+    background: var(--panel-2);
+  }
+  input[type="range"]::-moz-range-progress {
+    height: 6px;
+    border-radius: 3px;
+    background: linear-gradient(90deg, var(--pink), var(--cyan));
+  }
+  input[type="range"]:focus-visible {
+    outline: 2px solid var(--accent-2);
+    outline-offset: 3px;
+  }
+  .fader-value {
+    display: inline-block;
+    min-width: 26px;
+    text-align: center;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 0.72rem;
+    font-weight: 700;
+    color: var(--bg);
+    background: linear-gradient(120deg, var(--pink), var(--cyan));
+    border-radius: 4px;
+    padding: 1px 6px;
+    margin-left: 6px;
+    vertical-align: 1px;
+  }
+  .fader-ticks {
+    display: flex;
+    justify-content: space-between;
+    font-size: 0.68rem;
+    color: var(--muted);
+    margin-top: 2px;
+  }
+  /* Toggle switch for "remember this key" — sibling selector needs the
+     checkbox and .toggle-track adjacent in the DOM (see markup below). */
+  .toggle-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-weight: 400;
+    font-size: 0.8rem;
+    color: var(--muted);
+    cursor: pointer;
+  }
+  .toggle-row input[type="checkbox"] {
+    position: absolute;
+    opacity: 0;
+    width: 0;
+    height: 0;
+  }
+  .toggle-track {
+    position: relative;
+    width: 36px;
+    height: 20px;
+    border-radius: 999px;
+    background: var(--panel-2);
+    border: 1px solid var(--border);
+    flex-shrink: 0;
+    transition: background 0.15s ease, border-color 0.15s ease;
+  }
+  .toggle-track::after {
+    content: '';
+    position: absolute;
+    top: 2px;
+    left: 2px;
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    background: var(--muted);
+    transition: transform 0.15s ease, background 0.15s ease;
+  }
+  .toggle-row input:checked + .toggle-track {
+    background: rgba(255,45,120,0.18);
+    border-color: var(--pink);
+  }
+  .toggle-row input:checked + .toggle-track::after {
+    transform: translateX(16px);
+    background: var(--pink);
+  }
+  .toggle-row input:focus-visible + .toggle-track {
+    outline: 2px solid var(--accent-2);
+    outline-offset: 2px;
+  }
   footer {
     display: flex;
     align-items: center;
@@ -300,10 +468,12 @@
 
   <form id="remix-form">
     <div class="panel">
+      <span class="ch-badge">CH.1 · TRACKS</span>
       <div class="field">
         <label for="songs">Songs</label>
         <label class="file-drop" id="file-drop">
           <input type="file" id="songs" name="songs" multiple accept="audio/*,.mp3,.wav,.flac,.m4a,.ogg" />
+          <span class="drop-icon" aria-hidden="true"></span>
           <span id="drop-label">Click to choose audio files, or drag them here</span>
           <div id="file-list"></div>
         </label>
@@ -311,6 +481,7 @@
     </div>
 
     <div class="panel">
+      <span class="ch-badge">CH.2 · MIX SETTINGS</span>
       <div class="field">
         <label for="prompt">Prompt (optional)</label>
         <input type="text" id="prompt" name="prompt" placeholder='e.g. "something moody for a rainy drive"' />
@@ -326,8 +497,10 @@
           Sent to this local server only, over this page's connection — never sent anywhere else.
         </div>
         <div class="field" style="margin-top:8px; margin-bottom:0;">
-          <label style="display:flex; align-items:center; gap:6px; font-weight:400; font-size:0.8rem; color:var(--muted);">
-            <input type="checkbox" id="rememberKey" style="width:auto;" /> Remember this key in this browser (localStorage)
+          <label class="toggle-row">
+            <input type="checkbox" id="rememberKey" />
+            <span class="toggle-track" aria-hidden="true"></span>
+            Remember this key in this browser (localStorage)
           </label>
         </div>
       </div>
@@ -345,17 +518,19 @@
 
       <div class="row">
         <div class="field">
-          <label for="beamWidth">Beam width</label>
-          <input type="number" id="beamWidth" name="beamWidth" min="1" value="6" />
+          <label for="beamWidth">Beam width <span id="beamWidthValue" class="fader-value">6</span></label>
+          <input type="range" id="beamWidth" name="beamWidth" min="1" max="20" step="1" value="6" />
+          <div class="fader-ticks"><span>1 · narrow</span><span>20 · wide</span></div>
         </div>
         <div class="field">
-          <label for="maxSteps">Max steps</label>
-          <input type="number" id="maxSteps" name="maxSteps" min="1" value="30" />
+          <label for="maxSteps">Max steps <span id="maxStepsValue" class="fader-value">30</span></label>
+          <input type="range" id="maxSteps" name="maxSteps" min="5" max="100" step="1" value="30" />
+          <div class="fader-ticks"><span>5 · short</span><span>100 · long</span></div>
         </div>
       </div>
     </div>
 
-    <button type="submit" id="generate-btn">Generate remix</button>
+    <button type="submit" id="generate-btn"><span class="play-glyph" aria-hidden="true"></span>Drop The Mix</button>
   </form>
 
   <div id="result" class="panel" hidden>
@@ -417,6 +592,21 @@
   rememberKeyCheckbox.addEventListener('change', () => {
     if (!rememberKeyCheckbox.checked) localStorage.removeItem(GEMINI_KEY_STORAGE);
   });
+
+  // Drives the fader's live gradient fill (--val) and numeric readout badge.
+  function bindFader(input, valueEl) {
+    function sync() {
+      const min = Number(input.min) || 0;
+      const max = Number(input.max) || 100;
+      const pct = ((Number(input.value) - min) / (max - min)) * 100;
+      input.style.setProperty('--val', pct + '%');
+      if (valueEl) valueEl.textContent = input.value;
+    }
+    input.addEventListener('input', sync);
+    sync();
+  }
+  bindFader(document.getElementById('beamWidth'), document.getElementById('beamWidthValue'));
+  bindFader(document.getElementById('maxSteps'), document.getElementById('maxStepsValue'));
 
   fileInput.addEventListener('change', renderFileList);
 
