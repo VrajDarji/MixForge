@@ -5,6 +5,9 @@ import { EdgeSignals, PlannerConfig, TransitionEdge } from '../../core';
 import { synthEdges } from '../../../test-data/synthetic/graph';
 import { evaluateNode } from '../lib';
 import { synthNodes } from '../../../test-data/synthetic/graph';
+import { evaluatePath } from '../lib';
+import { SearchResources } from '../../core';
+import { sampleEnergyCurve } from '../utils';
 
 describe('calibrate()', () => {
   it('passes the raw value through unchanged at confidence 1.0', () => {
@@ -159,5 +162,84 @@ describe('evaluateNode()', () => {
     const config = baseConfig({ nodeWeights: nodeWeights({ energy: 1, danceability: 1 }) });
     // A2: energy=0.5, danceability=0.6, both confidence 1 -> calibrated == raw
     expect(evaluateNode(a2, config)).toBeCloseTo(0.5 + 0.6);
+  });
+});
+
+function baseResources(overrides: Partial<SearchResources> = {}): SearchResources {
+  return {
+    elapsedDurationBucket: 900,
+    energyBucket: 0.5,
+    currentKeyBucket: '8A',
+    currentNodeId: 'A2',
+    songDiversityCount: 2,
+    recentSectionTypes: [],
+    usedChunkIds: new Set(['A1', 'A2']),
+    usedSongIds: new Set(['songA']),
+    history: ['A1', 'A2', 'B2', 'A3'],
+    ...overrides,
+  };
+}
+
+describe('sampleEnergyCurve()', () => {
+  it('samples the nearest point on the curve for a given normalized time', () => {
+    const curve = [0.2, 0.5, 0.8];
+    expect(sampleEnergyCurve(curve, 0)).toBe(0.2);
+    expect(sampleEnergyCurve(curve, 0.5)).toBe(0.5);
+    expect(sampleEnergyCurve(curve, 1)).toBe(0.8);
+  });
+
+  it('clamps out-of-range t to [0, 1]', () => {
+    const curve = [0.2, 0.5, 0.8];
+    expect(sampleEnergyCurve(curve, -1)).toBe(0.2);
+    expect(sampleEnergyCurve(curve, 2)).toBe(0.8);
+  });
+});
+
+describe('evaluatePath()', () => {
+  it('scores full duration adherence as 1 when elapsed matches target exactly', () => {
+    const resources = baseResources({ elapsedDurationBucket: 1800 });
+    const config = baseConfig({
+      targetDurationSec: 1800,
+      durationToleranceSec: 30,
+      targetEnergyCurve: [0.5],
+      pathObjectiveWeights: { durationAdherence: 1, energyCurveAdherence: 0, diversity: 0, repetitionPenalty: 0 },
+    });
+    expect(evaluatePath(resources, config)).toBeCloseTo(1);
+  });
+
+  it('combines duration, energy, and diversity terms per pathObjectiveWeights', () => {
+    const resources = baseResources({
+      elapsedDurationBucket: 900,
+      energyBucket: 0.5,
+      songDiversityCount: 2,
+      history: ['A1', 'A2', 'B2', 'A3'],
+    });
+    const config = baseConfig({
+      targetDurationSec: 1800,
+      durationToleranceSec: 30,
+      targetEnergyCurve: [0.2, 0.5, 0.8],
+      pathObjectiveWeights: { durationAdherence: 1, energyCurveAdherence: 1, diversity: 1, repetitionPenalty: 1 },
+    });
+    // duration: elapsed(900) is 900s off target(1800), clamped -> durationScore = 0
+    // energy: t=900/1800=0.5 -> curve sample = 0.5; energyBucket=0.5 -> energyScore = 1
+    // diversity: 2 / 4 = 0.5
+    expect(evaluatePath(resources, config)).toBeCloseTo(0 + 1 + 0.5);
+  });
+
+  it('produces two different scores for two different pathObjectiveWeights, same resources', () => {
+    const resources = baseResources();
+    const configA = baseConfig({
+      targetDurationSec: 1800,
+      durationToleranceSec: 900,
+      targetEnergyCurve: [0.5],
+      pathObjectiveWeights: { durationAdherence: 1, energyCurveAdherence: 0, diversity: 0, repetitionPenalty: 0 },
+    });
+    const configB = baseConfig({
+      targetDurationSec: 1800,
+      durationToleranceSec: 900,
+      targetEnergyCurve: [0.5],
+      pathObjectiveWeights: { durationAdherence: 0, energyCurveAdherence: 0, diversity: 1, repetitionPenalty: 0 },
+    });
+    expect(evaluatePath(resources, configA)).not.toBeCloseTo(evaluatePath(resources, configB));
   });
 });

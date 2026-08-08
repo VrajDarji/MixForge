@@ -2,6 +2,8 @@ import { CalibrationFn } from '../core';
 import { EdgeSignals, PlannerConfig, TransitionEdge } from '../core';
 import { EdgeEvalResult } from './types';
 import { ChunkNode, Measurement, NodeSignals } from '../core';
+import { SearchResources } from '../core';
+import { sampleEnergyCurve } from './utils';
 
 // ADR-009: pulls low-confidence values toward neutral before harsh
 // non-compensatory composition, rather than letting one noisy detector
@@ -64,4 +66,25 @@ export function evaluateNode(node: ChunkNode, config: PlannerConfig): number {
     score += weight * calibrate(node.signals[key] as Measurement<number>, toScalar);
   }
   return score;
+}
+
+export function evaluatePath(resources: SearchResources, config: PlannerConfig): number {
+  const durationDelta = Math.abs(resources.elapsedDurationBucket - config.targetDurationSec);
+  const durationScore = 1 - Math.min(durationDelta / config.durationToleranceSec, 1);
+
+  const targetEnergy = sampleEnergyCurve(
+    config.targetEnergyCurve,
+    resources.elapsedDurationBucket / config.targetDurationSec
+  );
+  const energyScore = 1 - Math.abs(resources.energyBucket - targetEnergy);
+  const diversityScore = resources.songDiversityCount / Math.max(resources.history.length, 1);
+
+  const w = config.pathObjectiveWeights;
+  return (
+    w.durationAdherence * durationScore +
+    w.energyCurveAdherence * energyScore +
+    w.diversity * diversityScore
+  );
+  // repetitionPenalty is applied by the planner (Phase 4) from
+  // usedChunkIds/usedSongIds — out of scope here, per implementation.md §7.4.
 }
