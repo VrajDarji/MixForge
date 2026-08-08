@@ -353,4 +353,18 @@ describe('planRemix()', () => {
 
     expect(second).toEqual(first);
   });
+
+  it('returns a well-formed failure instead of throwing when startCandidates is empty', () => {
+    const config = { ...configWith([]), targetDurationSec: 24, durationToleranceSec: 4 };
+    const result = planRemix(fixtureGraph, [], config, 4, 5);
+    expect(isPlanFailure(result)).toBe(true);
+    expect((result as { failure: string }).failure).toBe('no_valid_path');
+  });
+
+  it('returns a well-formed failure instead of throwing when beamWidth is 0', () => {
+    const config = { ...configWith([]), targetDurationSec: 24, durationToleranceSec: 4 };
+    const result = planRemix(fixtureGraph, [findNode('A1')], config, 0, 5);
+    expect(isPlanFailure(result)).toBe(true);
+    expect((result as { failure: string }).failure).toBe('no_valid_path');
+  });
 });

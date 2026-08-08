@@ -121,6 +121,10 @@ export function planRemix(
   beamWidth: number,
   maxSteps: number
 ): PlanResult {
+  if (startCandidates.length === 0 || beamWidth <= 0) {
+    return { failure: 'no_valid_path' };
+  }
+
   let beam: SearchState[] = startCandidates.map(initialState).sort(compareStatesByScoreThenId);
 
   for (let step = 0; step < maxSteps; step++) {
