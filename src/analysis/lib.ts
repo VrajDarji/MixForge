@@ -4,7 +4,7 @@ import * as os from 'os';
 import * as path from 'path';
 import ffmpegPath from 'ffmpeg-static';
 import * as wav from 'node-wav';
-import { Essentia, EssentiaWASM } from 'essentia.js';
+import { Essentia, EssentiaVector, EssentiaWASM } from 'essentia.js';
 import { ChunkNode, measurement, NodeSignals, SectionType } from '../core';
 import { AnalysisParams, DecodedAudio } from './types';
 import { computeRms, DETECTOR_VERSION, normalizeConfidence, toCamelotKey } from './utils';
@@ -49,21 +49,82 @@ export function decodeAudioFile(filePath: string): DecodedAudio {
 // Mean MFCC vector across non-overlapping analysis frames — a lightweight,
 // deterministic stand-in for a real pretrained audio embedding (OpenL3/CLAP
 // per docs/implementation.md §9.1), which is out of scope for this phase.
+//
+// essentia.js's WASM (embind) vectors are manually-managed under the hood —
+// JS garbage collection does not free their WASM heap allocation. A chunk
+// can produce hundreds of frames, each allocating 4 vectors (frame, windowed,
+// spectrum, mfcc) — every one of those MUST be explicitly .delete()d or the
+// fixed-size WASM heap fills up and the module hard-aborts partway through a
+// real multi-minute song (this was observed directly: fine on short clips,
+// aborts on full-length tracks without this cleanup).
 function computeChunkEmbedding(samples: Float32Array): Float32Array {
   const frames = essentia.FrameGenerator(samples, FRAME_SIZE, HOP_SIZE);
-  const frameCount = frames.size();
-  const sums = new Float32Array(MFCC_COEFFICIENT_COUNT);
-  if (frameCount === 0) return sums;
+  try {
+    const frameCount = frames.size();
+    const sums = new Float32Array(MFCC_COEFFICIENT_COUNT);
+    if (frameCount === 0) return sums;
 
-  for (let i = 0; i < frameCount; i++) {
-    const frame = frames.get(i);
-    const windowed = essentia.Windowing(frame, true, FRAME_SIZE, 'hann').frame;
-    const spectrum = essentia.Spectrum(windowed).spectrum;
-    const mfcc = essentia.vectorToArray(essentia.MFCC(spectrum).mfcc);
-    for (let c = 0; c < MFCC_COEFFICIENT_COUNT; c++) sums[c] += mfcc[c] ?? 0;
+    for (let i = 0; i < frameCount; i++) {
+      const frame = frames.get(i) as EssentiaVector;
+      const windowed = essentia.Windowing(frame, true, FRAME_SIZE, 'hann').frame;
+      const spectrum = essentia.Spectrum(windowed).spectrum;
+      const mfccResult = essentia.MFCC(spectrum);
+      try {
+        const mfcc = essentia.vectorToArray(mfccResult.mfcc);
+        for (let c = 0; c < MFCC_COEFFICIENT_COUNT; c++) sums[c] += mfcc[c] ?? 0;
+      } finally {
+        frame.delete();
+        windowed.delete();
+        spectrum.delete();
+        mfccResult.bands.delete();
+        mfccResult.mfcc.delete();
+      }
+    }
+    for (let c = 0; c < MFCC_COEFFICIENT_COUNT; c++) sums[c] /= frameCount;
+    return sums;
+  } finally {
+    frames.delete();
   }
-  for (let c = 0; c < MFCC_COEFFICIENT_COUNT; c++) sums[c] /= frameCount;
-  return sums;
+}
+
+function analyzeSongLevelSignals(samples: Float32Array): { bpmValue: number; bpmConfidence: number; camelotKey: string; keyConfidence: number } {
+  const fullVector = essentia.arrayToVector(samples);
+  try {
+    const rhythm = essentia.RhythmExtractor2013(fullVector, 208, 'multifeature', 40);
+    const bpmValue = rhythm.bpm;
+    const bpmConfidence = normalizeConfidence(rhythm.confidence, RHYTHM_CONFIDENCE_CEILING);
+    rhythm.ticks.delete();
+    rhythm.estimates.delete();
+    rhythm.bpmIntervals.delete();
+
+    const key = essentia.KeyExtractor(fullVector); // no vector fields on this one
+    const camelotKey = toCamelotKey(key.key, key.scale);
+    const keyConfidence = normalizeConfidence(key.strength, 1);
+
+    return { bpmValue, bpmConfidence, camelotKey, keyConfidence };
+  } finally {
+    fullVector.delete();
+  }
+}
+
+function analyzeChunkLevelSignals(chunkSamples: Float32Array, sampleRate: number): { energyValue: number; loudnessValue: number; danceabilityValue: number } {
+  const energyValue = Math.min(computeRms(chunkSamples) / ENERGY_REFERENCE_RMS, 1);
+
+  const chunkVector = essentia.arrayToVector(chunkSamples);
+  try {
+    const loudness = essentia.LoudnessEBUR128(chunkVector, chunkVector, 0.1, sampleRate, true);
+    const loudnessValue = Number.isFinite(loudness.integratedLoudness) ? loudness.integratedLoudness : -70;
+    loudness.momentaryLoudness.delete();
+    loudness.shortTermLoudness.delete();
+
+    const danceability = essentia.Danceability(chunkVector);
+    const danceabilityValue = normalizeConfidence(danceability.danceability, DANCEABILITY_CEILING);
+    danceability.dfa.delete();
+
+    return { energyValue, loudnessValue, danceabilityValue };
+  } finally {
+    chunkVector.delete();
+  }
 }
 
 // Produces one ChunkNode per bar-aligned segment of the decoded song.
@@ -74,15 +135,7 @@ export function analyzeSong(
   decoded: DecodedAudio,
   params: AnalysisParams = DEFAULT_ANALYSIS_PARAMS
 ): readonly ChunkNode[] {
-  const fullVector = essentia.arrayToVector(decoded.samples);
-
-  const rhythm = essentia.RhythmExtractor2013(fullVector, 208, 'multifeature', 40);
-  const bpmValue = rhythm.bpm;
-  const bpmConfidence = normalizeConfidence(rhythm.confidence, RHYTHM_CONFIDENCE_CEILING);
-
-  const key = essentia.KeyExtractor(fullVector);
-  const camelotKey = toCamelotKey(key.key, key.scale);
-  const keyConfidence = normalizeConfidence(key.strength, 1);
+  const { bpmValue, bpmConfidence, camelotKey, keyConfidence } = analyzeSongLevelSignals(decoded.samples);
 
   const beatIntervalSec = 60 / bpmValue;
   const chunkDurationSec = beatIntervalSec * params.beatsPerBar * params.barsPerChunk;
@@ -97,16 +150,9 @@ export function analyzeSong(
     const chunkSamples = decoded.samples.subarray(startSample, endSample);
     if (chunkSamples.length < decoded.sampleRate * MIN_CHUNK_DURATION_SEC) continue;
 
-    const chunkVector = essentia.arrayToVector(chunkSamples);
-
-    const energyValue = Math.min(computeRms(chunkSamples) / ENERGY_REFERENCE_RMS, 1);
-
-    const loudness = essentia.LoudnessEBUR128(chunkVector, chunkVector, 0.1, decoded.sampleRate, true);
-    const loudnessValue = Number.isFinite(loudness.integratedLoudness) ? loudness.integratedLoudness : -70;
-
-    const danceabilityValue = normalizeConfidence(essentia.Danceability(chunkVector).danceability, DANCEABILITY_CEILING);
-
+    const { energyValue, loudnessValue, danceabilityValue } = analyzeChunkLevelSignals(chunkSamples, decoded.sampleRate);
     const embeddingArray = computeChunkEmbedding(chunkSamples);
+
     // Rough, low-confidence proxies for instrument presence — no dedicated
     // classifier is wired up (docs/implementation.md §9.1 explicitly allows
     // "an embedding-derived proxy if unavailable"). Derived from MFCC
