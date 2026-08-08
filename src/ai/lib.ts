@@ -1,13 +1,31 @@
-import { PlannerConfig } from '../core';
+import { HardConstraint, PlannerConfig } from '../core';
 import { PromptRule } from './types';
 import { clamp } from './utils';
+
+// SearchResources.history already records every chunk visited (ADR-007
+// Class C) — checking it here is enough to guarantee no chunk plays twice
+// in one remix, without any new planner/scorer plumbing. This substitutes
+// for PlannerConfig.pathObjectiveWeights.repetitionPenalty, which remains
+// unimplemented (see below) — a hard "never repeat" rule is simpler and
+// more predictable than a soft, tunable penalty, and was cheap to verify
+// against real usage (a real remix was visibly repeating chunks 2-3x with
+// no repetition guard at all).
+//
+// `resources` here is the state AFTER traversing `edge` (per HardConstraint's
+// contract), so `resources.currentNodeId` is `edge.to` and already appears
+// once in `resources.history` — a length > 1 means it appeared before this
+// occurrence too, i.e. a genuine repeat.
+export const NO_REPEAT_CHUNK_CONSTRAINT: HardConstraint = {
+  name: 'no-repeat-chunk',
+  check: (_edge, resources) => resources.history.filter((id) => id === resources.currentNodeId).length <= 1,
+};
 
 // A sensible, mostly-neutral baseline. AI only ever produces a *diff* from
 // this via interpretPrompt() — it never touches the graph or planner
 // algorithm (design.md §18).
 export function defaultPlannerConfig(): PlannerConfig {
   return {
-    hardConstraints: [],
+    hardConstraints: [NO_REPEAT_CHUNK_CONSTRAINT],
     nodeWeights: {
       bpm: 0, key: 0, energy: 0.5, loudnessLufs: 0, guitarPresence: 0,
       vocalPresence: 0, danceability: 0.5, sectionType: 0, embedding: 0, genreDistribution: 0,

@@ -1,11 +1,48 @@
-import { defaultPlannerConfig, interpretPrompt } from '../lib';
+import { SearchResources, TransitionEdge } from '../../core';
+import { defaultPlannerConfig, interpretPrompt, NO_REPEAT_CHUNK_CONSTRAINT } from '../lib';
+
+function fixtureResources(overrides: Partial<SearchResources> = {}): SearchResources {
+  return {
+    elapsedDurationBucket: 40,
+    energyBucket: 0.5,
+    currentKeyBucket: '8A',
+    currentNodeId: 'A2',
+    songDiversityCount: 1,
+    recentSectionTypes: [],
+    usedChunkIds: new Set(['A1', 'A2']),
+    usedSongIds: new Set(['songA']),
+    history: ['A1', 'A2'],
+    ...overrides,
+  };
+}
 
 describe('defaultPlannerConfig()', () => {
   it('produces a well-formed, fully-populated PlannerConfig', () => {
     const config = defaultPlannerConfig();
-    expect(config.hardConstraints).toEqual([]);
     expect(config.targetDurationSec).toBeGreaterThan(0);
     expect(config.targetEnergyCurve.length).toBeGreaterThan(0);
+  });
+
+  it('includes a no-repeat-chunk hard constraint by default', () => {
+    const config = defaultPlannerConfig();
+    expect(config.hardConstraints).toContainEqual(NO_REPEAT_CHUNK_CONSTRAINT);
+  });
+});
+
+describe('NO_REPEAT_CHUNK_CONSTRAINT', () => {
+  const dummyCalibrate = ((_m: unknown, _toScalar: unknown, neutral = 0.5) => neutral) as never;
+  const dummyEdge = {} as TransitionEdge; // the constraint only reads `resources`
+
+  it('passes when the destination chunk has not appeared before', () => {
+    const resources = fixtureResources({ currentNodeId: 'A2', history: ['A1', 'A2'] });
+    expect(NO_REPEAT_CHUNK_CONSTRAINT.check(dummyEdge, resources, dummyCalibrate)).toBe(true);
+  });
+
+  it('fails when the destination chunk already appeared earlier in history', () => {
+    // Simulates a resources snapshot where 'A1' (the current node after this
+    // transition) already appeared once before — i.e. a genuine repeat.
+    const resources = fixtureResources({ currentNodeId: 'A1', history: ['A1', 'A2', 'A1'] });
+    expect(NO_REPEAT_CHUNK_CONSTRAINT.check(dummyEdge, resources, dummyCalibrate)).toBe(false);
   });
 });
 

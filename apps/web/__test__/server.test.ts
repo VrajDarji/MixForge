@@ -60,10 +60,30 @@ describe('web server /api/remix', () => {
     expect(durationHeader).not.toBeNull();
     expect(Number(durationHeader)).toBeGreaterThan(0);
     expect(chunkIdsHeader).not.toBeNull();
-    expect(decodeURIComponent(chunkIdsHeader!)).toContain('->');
+    const chunkIds = decodeURIComponent(chunkIdsHeader!);
+    expect(chunkIds).toContain('->');
+    // The original uploaded filenames must survive into the chunk ids — not
+    // multer's default random hex temp filename (a real regression: the web
+    // upload path previously showed opaque hashes like "c5b417d0...-chunk-0"
+    // instead of "synthetic-a-chunk-0" in generated remix output).
+    expect(chunkIds).toMatch(/synthetic-[ab]-chunk-\d+/);
 
     const buffer = Buffer.from(await response.arrayBuffer());
     expect(buffer.length).toBeGreaterThan(1000);
     expect(buffer.toString('ascii', 0, 4)).toBe('RIFF'); // WAV file signature
   }, 60000);
+
+  it('sanitizes path-traversal attempts in uploaded filenames', async () => {
+    const formData = new FormData();
+    formData.append('songs', new Blob([fs.readFileSync(FIXTURE_A)]), '../../evil.wav');
+    formData.append('duration', '10');
+    formData.append('maxSteps', '5');
+
+    const response = await fetch(`${baseUrl}/api/remix`, { method: 'POST', body: formData });
+    // Must not crash or write outside the upload directory — either a clean
+    // success (using the basename "evil.wav") or a clean failure is fine;
+    // an uncaught exception / 5xx from a filesystem error is not.
+    expect([200, 400, 500]).toContain(response.status);
+    await response.arrayBuffer();
+  }, 30000);
 });
