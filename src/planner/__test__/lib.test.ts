@@ -9,6 +9,8 @@ import { compareStatesByScoreThenId } from '../utils';
 import { SearchState } from '../../core';
 import { handleDeadEnd, isWithinTargetDuration, toRemixPlan } from '../lib';
 import { isPlanFailure } from '../utils';
+import { planRemix } from '../lib';
+import { buildMusicGraph } from '../../graph';
 
 function findNode(id: string): ChunkNode {
   return synthNodes.find((n) => n.id === id)!;
@@ -301,5 +303,54 @@ describe('handleDeadEnd()', () => {
       failure: 'no_valid_path',
       bestPartial: { chunkIds: ['A1', 'A2'], totalScore: 1, estimatedDurationSec: 100, diagnostics: { nearFailedConstraints: [], prunedCandidateCount: 0 } },
     });
+  });
+});
+
+const fixtureGraph = buildMusicGraph(synthNodes, synthEdges);
+
+describe('planRemix()', () => {
+  it('builds A1 -> A2 -> B2 and never traverses the known-bad B2->A3 edge, when the target is reachable', () => {
+    const reachableConfig = { ...configWith([]), targetDurationSec: 24, durationToleranceSec: 4 };
+
+    const result = planRemix(fixtureGraph, [findNode('A1')], reachableConfig, 4, 5);
+
+    expect(isPlanFailure(result)).toBe(false);
+    const plan = result as ReturnType<typeof toRemixPlan>;
+    expect(plan.chunkIds).toEqual(['A1', 'A2', 'B2']);
+    expect(plan.chunkIds).not.toContain('A3');
+    expect(plan.estimatedDurationSec).toBe(24);
+    expect(Number.isNaN(plan.totalScore)).toBe(false);
+  });
+
+  it('returns a successful plan via relaxed dead-end tolerance when the target is somewhat further away', () => {
+    const config = { ...configWith([]), targetDurationSec: 32, durationToleranceSec: 4 }; // relaxed tolerance 12; dead-end at 24 is 8 away
+
+    const result = planRemix(fixtureGraph, [findNode('A1')], config, 4, 5);
+
+    expect(isPlanFailure(result)).toBe(false);
+    const plan = result as ReturnType<typeof toRemixPlan>;
+    expect(plan.chunkIds).toEqual(['A1', 'A2', 'B2']);
+    expect(plan.chunkIds).not.toContain('A3');
+  });
+
+  it('returns a well-formed failure, not a throw or hang, when the target is unreachable even at relaxed tolerance', () => {
+    const config = { ...configWith([]), targetDurationSec: 200, durationToleranceSec: 2 }; // relaxed tolerance 6; dead-end at 24 is nowhere close
+
+    const result = planRemix(fixtureGraph, [findNode('A1')], config, 4, 5);
+
+    expect(isPlanFailure(result)).toBe(true);
+    const failure = result as { failure: 'no_valid_path'; bestPartial?: { chunkIds: string[] } };
+    expect(failure.failure).toBe('no_valid_path');
+    expect(failure.bestPartial?.chunkIds).toEqual(['A1', 'A2', 'B2']);
+    expect(failure.bestPartial?.chunkIds).not.toContain('A3');
+  });
+
+  it('produces identical output for identical inputs, run twice', () => {
+    const config = { ...configWith([]), targetDurationSec: 24, durationToleranceSec: 4 };
+
+    const first = planRemix(fixtureGraph, [findNode('A1')], config, 4, 5);
+    const second = planRemix(fixtureGraph, [findNode('A1')], config, 4, 5);
+
+    expect(second).toEqual(first);
   });
 });

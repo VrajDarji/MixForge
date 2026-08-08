@@ -5,6 +5,8 @@ import { mergeKey } from '../core';
 import { compareStatesByScoreThenId } from './utils';
 import { RemixPlan } from '../core';
 import { PlanResult } from './types';
+import { MusicGraph } from '../core';
+import { evaluateEdge, evaluateNode, evaluatePath } from '../scorer';
 
 // ADR-007 Class B: "last N only" per SearchResources.recentSectionTypes's
 // comment in core/types.ts — 3 is small enough to matter for merge-key
@@ -110,4 +112,51 @@ export function handleDeadEnd(beam: SearchState[], config: PlannerConfig): PlanR
     return toRemixPlan(best);
   }
   return { failure: 'no_valid_path', bestPartial: toRemixPlan(best) };
+}
+
+export function planRemix(
+  graph: MusicGraph,
+  startCandidates: readonly ChunkNode[],
+  config: PlannerConfig,
+  beamWidth: number,
+  maxSteps: number
+): PlanResult {
+  let beam: SearchState[] = startCandidates.map(initialState).sort(compareStatesByScoreThenId);
+
+  for (let step = 0; step < maxSteps; step++) {
+    const candidates: SearchState[] = [];
+
+    for (const currentState of beam) {
+      for (const edge of graph.getOutgoingEdges(currentState.resources.currentNodeId)) {
+        const evalResult = evaluateEdge(edge, config);
+        if (!evalResult.feasible) continue; // ADR-005 stage 1: catastrophic transitions never reach scoring
+
+        const nextNode = graph.getNode(edge.to);
+        if (!nextNode) continue; // malformed graph: edge points at a node that doesn't exist — skip, don't crash
+
+        const nextResources = updateResources(currentState.resources, edge, nextNode);
+        if (!isValidResources(edge, nextResources, config)) continue;
+
+        const score =
+          currentState.accumulatedScore +
+          evalResult.qualityScore +
+          evaluateNode(nextNode, config) +
+          evaluatePath(nextResources, config);
+
+        candidates.push({ accumulatedScore: score, resources: nextResources });
+      }
+    }
+
+    if (candidates.length === 0) return handleDeadEnd(beam, config);
+
+    beam = selectDiverseBeam(candidates, beamWidth);
+
+    if (beam.some((s) => isWithinTargetDuration(s.resources, config))) break;
+  }
+
+  const finished = beam.filter((s) => isWithinTargetDuration(s.resources, config)).sort(compareStatesByScoreThenId);
+  if (finished.length > 0) return toRemixPlan(finished[0]);
+
+  const bestOverall = [...beam].sort(compareStatesByScoreThenId)[0];
+  return { failure: 'no_valid_path', bestPartial: toRemixPlan(bestOverall) };
 }
