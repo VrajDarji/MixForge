@@ -4,6 +4,9 @@ import { synthEdges, synthNodes } from '../../../test-data/synthetic/graph';
 import { isValidResources } from '../lib';
 import { calibrate } from '../../scorer';
 import { HardConstraint, PlannerConfig, SearchResources } from '../../core';
+import { selectDiverseBeam } from '../lib';
+import { compareStatesByScoreThenId } from '../utils';
+import { SearchState } from '../../core';
 
 function findNode(id: string): ChunkNode {
   return synthNodes.find((n) => n.id === id)!;
@@ -176,5 +179,60 @@ describe('isValidResources()', () => {
     isValidResources(findEdge('A1', 'A2'), baseHardResources(), configWith([capturing]));
     expect(typeof receivedCalibrate).toBe('function');
     expect(receivedCalibrate!({ value: true, confidence: 1, detector: 't', version: '1' }, (v) => (v ? 1 : 0))).toBe(1);
+  });
+});
+
+function state(currentNodeId: string, accumulatedScore: number, overrides: Partial<SearchResources> = {}): SearchState {
+  const base = baseHardResources();
+  return {
+    accumulatedScore,
+    resources: { ...base, currentNodeId, ...overrides },
+  };
+}
+
+describe('compareStatesByScoreThenId()', () => {
+  it('sorts by score descending', () => {
+    const states = [state('A', 5), state('B', 10)];
+    expect([...states].sort(compareStatesByScoreThenId).map((s) => s.resources.currentNodeId)).toEqual(['B', 'A']);
+  });
+
+  it('breaks score ties by currentNodeId ascending, deterministically', () => {
+    const states = [state('C', 5), state('A', 5), state('B', 5)];
+    expect([...states].sort(compareStatesByScoreThenId).map((s) => s.resources.currentNodeId)).toEqual(['A', 'B', 'C']);
+  });
+});
+
+describe('selectDiverseBeam()', () => {
+  it('merges candidates sharing a mergeKey, keeping only the higher-scoring one', () => {
+    const shared: Partial<SearchResources> = { elapsedDurationBucket: 16, energyBucket: 0.5, currentKeyBucket: '8A', songDiversityCount: 1, recentSectionTypes: [] };
+    const low = state('A2', 3, shared);
+    const high = state('A2', 9, shared);
+    const result = selectDiverseBeam([low, high], 5);
+    expect(result).toHaveLength(1);
+    expect(result[0].accumulatedScore).toBe(9);
+  });
+
+  it('keeps all candidates when width exceeds the deduped candidate count', () => {
+    const result = selectDiverseBeam([state('A', 1), state('B', 2)], 10);
+    expect(result).toHaveLength(2);
+  });
+
+  it('reserves beam slots for diversity instead of collapsing onto the single best-scoring node', () => {
+    const dominantNode = [
+      state('A', 10, { elapsedDurationBucket: 10 }),
+      state('A', 9, { elapsedDurationBucket: 11 }),
+      state('A', 8, { elapsedDurationBucket: 12 }),
+      state('A', 7, { elapsedDurationBucket: 13 }),
+      state('A', 6, { elapsedDurationBucket: 14 }),
+    ];
+    const diverseCandidate = state('B', 5, { elapsedDurationBucket: 99 });
+
+    const result = selectDiverseBeam([...dominantNode, diverseCandidate], 3);
+
+    const distinctNodes = new Set(result.map((s) => s.resources.currentNodeId));
+    expect(distinctNodes.size).toBeGreaterThan(1);
+    expect(result.some((s) => s.resources.currentNodeId === 'B')).toBe(true);
+    // A naive top-3-by-score-alone selection would be [A(10), A(9), A(8)] — prove we didn't do that.
+    expect(result.some((s) => s.accumulatedScore === 8)).toBe(false);
   });
 });

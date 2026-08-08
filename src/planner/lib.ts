@@ -1,6 +1,8 @@
 import { ChunkNode, SearchResources, SearchState, TransitionEdge } from '../core';
 import { HardConstraint, PlannerConfig } from '../core';
 import { calibrate } from '../scorer';
+import { mergeKey } from '../core';
+import { compareStatesByScoreThenId } from './utils';
 
 // ADR-007 Class B: "last N only" per SearchResources.recentSectionTypes's
 // comment in core/types.ts — 3 is small enough to matter for merge-key
@@ -47,4 +49,29 @@ export function updateResources(
 
 export function isValidResources(edge: TransitionEdge, resources: SearchResources, config: PlannerConfig): boolean {
   return config.hardConstraints.every((constraint: HardConstraint) => constraint.check(edge, resources, calibrate));
+}
+
+// ADR-007 merge (approximate DP: two states sharing a mergeKey are TREATED as
+// equivalent, not proven so — keep only the better-scoring one) + ADR-008
+// diversity (reserve beam slots so the beam doesn't collapse onto every
+// continuation of the single highest-scoring prefix).
+export function selectDiverseBeam(candidates: SearchState[], width: number): SearchState[] {
+  const byKey = new Map<string, SearchState>();
+  for (const candidate of candidates) {
+    const key = mergeKey(candidate.resources);
+    const existing = byKey.get(key);
+    if (!existing || candidate.accumulatedScore > existing.accumulatedScore) byKey.set(key, candidate);
+  }
+
+  const merged = [...byKey.values()].sort(compareStatesByScoreThenId);
+  const selected: SearchState[] = [];
+  const nodeCounts = new Map<string, number>();
+  for (const candidate of merged) {
+    if (selected.length >= width) break;
+    const count = nodeCounts.get(candidate.resources.currentNodeId) ?? 0;
+    if (count >= 1 && selected.length < width - 1) continue;
+    selected.push(candidate);
+    nodeCounts.set(candidate.resources.currentNodeId, count + 1);
+  }
+  return selected;
 }
