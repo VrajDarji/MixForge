@@ -1,6 +1,7 @@
 import { CalibrationFn } from '../core';
 import { EdgeSignals, PlannerConfig, TransitionEdge } from '../core';
 import { EdgeEvalResult } from './types';
+import { ChunkNode, Measurement, NodeSignals } from '../core';
 
 // ADR-009: pulls low-confidence values toward neutral before harsh
 // non-compensatory composition, rather than letting one noisy detector
@@ -37,4 +38,30 @@ export function evaluateEdge(edge: TransitionEdge, config: PlannerConfig): EdgeE
   );
   const product = weighted.reduce((a, b) => a * b, 1);
   return { feasible: true, qualityScore: Math.pow(product, 1 / weighted.length) };
+}
+
+// Only signals with a real linear 0-1-ish numeric scale are scored here
+// (ADR-004). key/sectionType/embedding/genreDistribution aren't linearly
+// scalar; a nonzero nodeWeight on one of them contributes 0, never NaN —
+// see docs/superpowers/plans/2026-08-08-phase3-scoring-engine.md's Global
+// Constraints for why this deviates from implementation.md §7.3's literal
+// snippet.
+const NODE_TO_SCALAR: Partial<Record<keyof NodeSignals, (value: number) => number>> = {
+  bpm: (v) => v,
+  energy: (v) => v,
+  loudnessLufs: (v) => v,
+  guitarPresence: (v) => v,
+  vocalPresence: (v) => v,
+  danceability: (v) => v,
+};
+
+export function evaluateNode(node: ChunkNode, config: PlannerConfig): number {
+  let score = 0;
+  for (const [key, weight] of Object.entries(config.nodeWeights) as [keyof NodeSignals, number][]) {
+    if (weight === 0) continue;
+    const toScalar = NODE_TO_SCALAR[key];
+    if (!toScalar) continue;
+    score += weight * calibrate(node.signals[key] as Measurement<number>, toScalar);
+  }
+  return score;
 }

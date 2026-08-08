@@ -3,6 +3,8 @@ import { measurement } from '../../core';
 import { evaluateEdge } from '../lib';
 import { EdgeSignals, PlannerConfig, TransitionEdge } from '../../core';
 import { synthEdges } from '../../../test-data/synthetic/graph';
+import { evaluateNode } from '../lib';
+import { synthNodes } from '../../../test-data/synthetic/graph';
 
 describe('calibrate()', () => {
   it('passes the raw value through unchanged at confidence 1.0', () => {
@@ -117,5 +119,45 @@ describe('evaluateEdge()', () => {
     expect(defaultWeights.feasible).toBe(true);
     expect(harsherEmbedding.feasible).toBe(true);
     expect(harsherEmbedding.qualityScore).toBeLessThan(defaultWeights.qualityScore);
+  });
+});
+
+function nodeWeights(overrides: Partial<Record<string, number>> = {}) {
+  return {
+    bpm: 0, key: 0, energy: 0, loudnessLufs: 0, guitarPresence: 0,
+    vocalPresence: 0, danceability: 0, sectionType: 0, embedding: 0, genreDistribution: 0,
+    ...overrides,
+  };
+}
+
+describe('evaluateNode()', () => {
+  const a2 = synthNodes.find((n) => n.id === 'A2')!; // energy 0.5, confidence 1
+
+  it('produces different scores for the same node under two different configs', () => {
+    const lowWeight = baseConfig({ nodeWeights: nodeWeights({ energy: 1 }) });
+    const highWeight = baseConfig({ nodeWeights: nodeWeights({ energy: 2 }) });
+    const scoreLow = evaluateNode(a2, lowWeight);
+    const scoreHigh = evaluateNode(a2, highWeight);
+    expect(scoreLow).toBeCloseTo(0.5); // calibrate(energy=0.5, confidence=1) * weight 1
+    expect(scoreHigh).toBeCloseTo(1.0);
+    expect(scoreLow).not.toBe(scoreHigh);
+  });
+
+  it('returns 0 for an all-zero-weight config', () => {
+    const config = baseConfig({ nodeWeights: nodeWeights() });
+    expect(evaluateNode(a2, config)).toBe(0);
+  });
+
+  it('contributes 0, not NaN, for a nonzero weight on a non-scalar signal', () => {
+    const config = baseConfig({ nodeWeights: nodeWeights({ sectionType: 5, embedding: 3 }) });
+    const score = evaluateNode(a2, config);
+    expect(Number.isNaN(score)).toBe(false);
+    expect(score).toBe(0);
+  });
+
+  it('sums contributions across multiple weighted scalar signals', () => {
+    const config = baseConfig({ nodeWeights: nodeWeights({ energy: 1, danceability: 1 }) });
+    // A2: energy=0.5, danceability=0.6, both confidence 1 -> calibrated == raw
+    expect(evaluateNode(a2, config)).toBeCloseTo(0.5 + 0.6);
   });
 });
