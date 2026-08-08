@@ -22,7 +22,8 @@ The `--` after `cli` is required (it tells npm to pass the following flags to th
 |---|---|---|---|
 | `--output <path>` | **yes** | — | Where to write the rendered mix (WAV, mono, 44.1kHz, 16-bit). |
 | `--prompt "<text>"` | no | `""` (no preferences applied) | Free-text description of what you want — see [Prompt Keywords](#prompt-keywords) below. |
-| `--duration <seconds>` | no | AI/default config's target (1800s = 30 min, or whatever the prompt implies) | Overrides the target mix duration. |
+| `--duration <seconds>` | no | AI/default config's target (1800s = 30 min, or whatever the prompt implies) | Overrides the target mix duration. When set without `--duration-tolerance`, tolerance auto-scales to `max(15s, 10% of duration)` rather than a flat default. |
+| `--duration-tolerance <seconds>` | no | `max(15, duration * 0.1)` when `--duration` is set; otherwise the config's own default | How close to the target is "close enough" — the planner accepts the first chunk sequence landing within `duration ± tolerance` of raw chunk-time (not the final rendered time — see note below). Tighten this for a closer match; widen it if the planner can't find a valid sequence. |
 | `--beam-width <n>` | no | `6` | How many parallel candidate sequences the planner explores at each step. Higher = more thorough search, slower. |
 | `--max-steps <n>` | no | `30` | Maximum chunks the planner will try to chain together. |
 
@@ -50,6 +51,8 @@ npm run cli -- --prompt "more vocal-forward, smooth transitions" --beam-width 10
 5. **Render** — the planned sequence is decoded from the original files, crossfaded together, time-corrected for BPM mismatches, and loudness-normalized (`src/renderer/`).
 
 If no sequence exactly matches your target duration, MixForge falls back to the closest plan it found rather than failing outright — you'll see a warning printed (`no target-duration match found — rendered the best partial plan instead`).
+
+**The final rendered file will usually be somewhat shorter than `--duration`, even on success.** The planner's duration accounting sums raw chunk lengths; the renderer then overlaps consecutive chunks during each crossfade, which shortens the final file. The CLI prints both numbers (`requested ~180s — rendered output is 127.8s`) so this is visible rather than a silent surprise. If you need to land closer to a specific length, target somewhat higher than you actually want, or tighten `--duration-tolerance` so the planner searches harder for a sequence near your target before accepting one.
 
 ## Prompt Keywords
 
