@@ -212,8 +212,23 @@
     <div class="panel">
       <div class="field">
         <label for="prompt">Prompt (optional)</label>
-        <input type="text" id="prompt" name="prompt" placeholder='e.g. "more vocal-forward, high energy"' />
-        <div class="hint">Keywords like guitar, vocal, energetic, chill, smooth, variety, short mix, long mix all shape the result.</div>
+        <input type="text" id="prompt" name="prompt" placeholder='e.g. "something moody for a rainy drive"' />
+        <div class="hint">Without a Gemini key below: matched against a fixed keyword list (guitar, vocal, energetic, chill, smooth, variety, short/long mix). With one: understands free-form descriptions.</div>
+      </div>
+
+      <div class="field">
+        <label for="geminiApiKey">Gemini API key (optional)</label>
+        <input type="password" id="geminiApiKey" name="geminiApiKey" placeholder="leave blank to use the built-in keyword rules" autocomplete="off" />
+        <div class="hint">
+          Enables much richer prompt understanding via Gemini. Get a free key at
+          <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener noreferrer">aistudio.google.com/apikey</a>.
+          Sent to this local server only, over this page's connection — never sent anywhere else.
+        </div>
+        <div class="field" style="margin-top:8px; margin-bottom:0;">
+          <label style="display:flex; align-items:center; gap:6px; font-weight:400; font-size:0.8rem; color:var(--muted);">
+            <input type="checkbox" id="rememberKey" style="width:auto;" /> Remember this key in this browser (localStorage)
+          </label>
+        </div>
       </div>
 
       <div class="row">
@@ -247,7 +262,8 @@
     <audio id="audio-player" controls></audio>
     <a id="download-link" class="download-btn" download="remix.wav">Download remix.wav</a>
     <div class="meta">
-      <div><strong>Rendered duration:</strong> <span id="result-duration">—</span></div>
+      <div><strong>Prompt interpreted via:</strong> <span id="result-engine">—</span></div>
+      <div style="margin-top:6px;"><strong>Rendered duration:</strong> <span id="result-duration">—</span></div>
       <div style="margin-top:6px;"><strong>Chunk sequence:</strong> <span id="result-chunks">—</span></div>
     </div>
   </div>
@@ -281,6 +297,22 @@
     div.textContent = s;
     return div.innerHTML;
   }
+
+  // Gemini key convenience storage — opt-in only (checkbox defaults unchecked),
+  // since an API key in localStorage is readable by any script on this origin.
+  // This is a localhost-only single-user tool; the tradeoff is documented in
+  // the field's hint text rather than hidden.
+  const GEMINI_KEY_STORAGE = 'mixforge.geminiApiKey';
+  const geminiKeyInput = document.getElementById('geminiApiKey');
+  const rememberKeyCheckbox = document.getElementById('rememberKey');
+  const storedKey = localStorage.getItem(GEMINI_KEY_STORAGE);
+  if (storedKey) {
+    geminiKeyInput.value = storedKey;
+    rememberKeyCheckbox.checked = true;
+  }
+  rememberKeyCheckbox.addEventListener('change', () => {
+    if (!rememberKeyCheckbox.checked) localStorage.removeItem(GEMINI_KEY_STORAGE);
+  });
 
   fileInput.addEventListener('change', renderFileList);
 
@@ -319,6 +351,13 @@
     formData.append('durationTolerance', document.getElementById('durationTolerance').value);
     formData.append('beamWidth', document.getElementById('beamWidth').value);
     formData.append('maxSteps', document.getElementById('maxSteps').value);
+    formData.append('geminiApiKey', geminiKeyInput.value);
+
+    if (rememberKeyCheckbox.checked && geminiKeyInput.value.trim()) {
+      localStorage.setItem(GEMINI_KEY_STORAGE, geminiKeyInput.value.trim());
+    } else if (!rememberKeyCheckbox.checked) {
+      localStorage.removeItem(GEMINI_KEY_STORAGE);
+    }
 
     generateBtn.disabled = true;
     resultEl.hidden = true;
@@ -338,6 +377,7 @@
       const durationSec = response.headers.get('X-Mixforge-Duration-Sec');
       const chunkIdsHeader = response.headers.get('X-Mixforge-Chunk-Ids');
       const usedFallback = response.headers.get('X-Mixforge-Used-Fallback') === 'true';
+      const usedGemini = response.headers.get('X-Mixforge-Used-Gemini') === 'true';
 
       const blob = await response.blob();
       const url = URL.createObjectURL(blob);
@@ -347,6 +387,7 @@
       downloadLink.href = url;
       document.getElementById('result-duration').textContent = durationSec ? durationSec + 's' : 'unknown';
       document.getElementById('result-chunks').textContent = chunkIdsHeader ? decodeURIComponent(chunkIdsHeader) : 'unknown';
+      document.getElementById('result-engine').textContent = usedGemini ? 'Gemini' : 'built-in keyword rules';
       document.getElementById('fallback-warning').hidden = !usedFallback;
 
       resultEl.hidden = false;

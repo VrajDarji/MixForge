@@ -8,6 +8,9 @@ async function main(): Promise<void> {
   if (result.usedFallbackPartialPlan) {
     console.warn('mixforge: no target-duration match found — rendered the best partial plan instead.');
   }
+  if (options.prompt.trim().length > 0) {
+    console.log(`mixforge: prompt interpreted via ${result.usedGemini ? 'Gemini' : 'the built-in keyword rules'}.`);
+  }
   console.log(`mixforge: rendered ${result.chunkIds.length} chunks (${result.durationSec.toFixed(1)}s) -> ${result.outputPath}`);
   if (options.targetDurationSec !== undefined) {
     // The planner's internal duration accounting sums raw chunk lengths;

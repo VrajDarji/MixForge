@@ -1,5 +1,6 @@
+import { GoogleGenAI, Type } from '@google/genai';
 import { HardConstraint, PlannerConfig } from '../core';
-import { PromptRule } from './types';
+import { GeminiIntent, GeminiOptions, PromptRule } from './types';
 import { clamp } from './utils';
 
 // SearchResources.history already records every chunk visited (ADR-007
@@ -121,4 +122,172 @@ export function interpretPrompt(prompt: unknown, base: PlannerConfig = defaultPl
     if (rule.pattern.test(prompt)) config = rule.apply(config);
   }
   return config;
+}
+
+// ============================================================================
+// Gemini — optional, richer prompt interpretation (design.md §18: "AI
+// configures preferences only", "swap in an LLM-based interpreter later...
+// with zero changes to the graph or planner"). This is exactly that swap.
+//
+// Gemini is asked for a small set of BOUNDED, NAMED intents (see
+// GeminiIntent in types.ts) — never raw PlannerConfig numbers. The model's
+// job is understanding nuanced language ("something moody for a rainy
+// drive"); translating an intent into safe, bounded weight deltas is
+// deterministic code (applyGeminiIntent, below), reusing the same
+// magnitudes PROMPT_RULES already uses. Schema-constrained JSON output
+// guarantees shape; validateGeminiIntent() still clamps every value,
+// because a schema guarantees types, not that a NUMBER field actually
+// landed in the range its description asked for.
+// ============================================================================
+
+const GEMINI_MODEL_DEFAULT = 'gemini-2.5-flash';
+
+const GEMINI_SYSTEM_INSTRUCTION =
+  'You configure music remix preferences for MixForge, an automatic DJ mix generator. ' +
+  'Given a free-text description of the desired mix, output your best estimate of the ' +
+  "user's preferences on the given normalized scales. Use 0 (or null for targetDurationSec) " +
+  "for any dimension the prompt does not express an opinion on — do not invent preferences " +
+  'the prompt does not imply.';
+
+const GEMINI_INTENT_SCHEMA = {
+  type: Type.OBJECT,
+  properties: {
+    guitarPresence: { type: Type.NUMBER, description: '-1 (avoid guitars) to 1 (strongly favor guitar-forward chunks), 0 = no preference' },
+    vocalPresence: { type: Type.NUMBER, description: '-1 to 1, vocal-forward preference, 0 = no preference' },
+    danceability: { type: Type.NUMBER, description: '-1 to 1, danceability preference, 0 = no preference' },
+    energyLevel: { type: Type.NUMBER, description: '-1 (calm/chill) to 1 (high energy/upbeat), 0 = no preference' },
+    smoothness: { type: Type.NUMBER, description: '0 to 1, how much to prioritize smooth/seamless transitions' },
+    diversity: { type: Type.NUMBER, description: '0 to 1, how much to favor pulling chunks from different songs rather than staying on one' },
+    targetDurationSec: {
+      type: Type.NUMBER,
+      nullable: true,
+      description: 'Explicit target mix duration in seconds if the prompt states or implies one (e.g. "5 minutes" -> 300); null if not mentioned',
+    },
+  },
+  required: ['guitarPresence', 'vocalPresence', 'danceability', 'energyLevel', 'smoothness', 'diversity'],
+};
+
+// The real Gemini call — the default for GeminiOptions.generateContentFn.
+// Kept as a separate, replaceable function specifically so tests can inject
+// a fake implementation instead of hitting the network (see GeminiOptions's
+// doc comment in types.ts).
+async function defaultGenerateContent(args: { apiKey: string; model: string; prompt: string }): Promise<string | undefined> {
+  const ai = new GoogleGenAI({ apiKey: args.apiKey });
+  const response = await ai.models.generateContent({
+    model: args.model,
+    contents: args.prompt,
+    config: {
+      systemInstruction: GEMINI_SYSTEM_INSTRUCTION,
+      responseMimeType: 'application/json',
+      responseSchema: GEMINI_INTENT_SCHEMA,
+    },
+  });
+  return response.text;
+}
+
+// Never trusts the parsed JSON's value ranges just because the schema
+// constrained its shape — every field is independently clamped.
+function validateGeminiIntent(raw: unknown): GeminiIntent | null {
+  if (typeof raw !== 'object' || raw === null) return null;
+  const obj = raw as Record<string, unknown>;
+
+  const boundedNumber = (value: unknown, min: number, max: number): number =>
+    typeof value === 'number' && Number.isFinite(value) ? clamp(value, min, max) : 0;
+
+  const durationSec = obj.targetDurationSec;
+  const validDuration = typeof durationSec === 'number' && Number.isFinite(durationSec) && durationSec > 0 ? durationSec : null;
+
+  return {
+    guitarPresence: boundedNumber(obj.guitarPresence, -1, 1),
+    vocalPresence: boundedNumber(obj.vocalPresence, -1, 1),
+    danceability: boundedNumber(obj.danceability, -1, 1),
+    energyLevel: boundedNumber(obj.energyLevel, -1, 1),
+    smoothness: boundedNumber(obj.smoothness, 0, 1),
+    diversity: boundedNumber(obj.diversity, 0, 1),
+    targetDurationSec: validDuration,
+  };
+}
+
+// Applies a validated intent using the exact same bounded magnitudes
+// PROMPT_RULES uses (e.g. +/-1.5 on a presence weight, 1.3x/0.6x on the
+// energy curve at full intensity) — Gemini only ever picks a *fraction* of
+// an already-vetted, already-tested transform, never an arbitrary value.
+function applyGeminiIntent(config: PlannerConfig, intent: GeminiIntent): PlannerConfig {
+  let result = config;
+
+  if (intent.guitarPresence !== 0) {
+    result = { ...result, nodeWeights: { ...result.nodeWeights, guitarPresence: result.nodeWeights.guitarPresence + intent.guitarPresence * 1.5 } };
+  }
+  if (intent.vocalPresence !== 0) {
+    result = { ...result, nodeWeights: { ...result.nodeWeights, vocalPresence: result.nodeWeights.vocalPresence + intent.vocalPresence * 1.5 } };
+  }
+  if (intent.danceability !== 0) {
+    result = { ...result, nodeWeights: { ...result.nodeWeights, danceability: result.nodeWeights.danceability + intent.danceability * 1.0 } };
+  }
+  if (intent.energyLevel > 0) {
+    result = scaleEnergyCurve(result, 1 + intent.energyLevel * 0.3); // up to 1.3x at intensity 1, matching the "energetic" prompt rule
+  } else if (intent.energyLevel < 0) {
+    result = scaleEnergyCurve(result, 1 + intent.energyLevel * 0.4); // down to 0.6x at intensity -1, matching the "chill" prompt rule
+  }
+  if (intent.smoothness > 0) {
+    result = {
+      ...result,
+      edgeWeights: {
+        ...result.edgeWeights,
+        beatAlignment: result.edgeWeights.beatAlignment + intent.smoothness,
+        embeddingSimilarity: result.edgeWeights.embeddingSimilarity + intent.smoothness,
+      },
+    };
+  }
+  if (intent.diversity > 0) {
+    result = { ...result, pathObjectiveWeights: { ...result.pathObjectiveWeights, diversity: result.pathObjectiveWeights.diversity + intent.diversity } };
+  }
+  if (intent.targetDurationSec !== null) {
+    result = { ...result, targetDurationSec: intent.targetDurationSec };
+  }
+
+  return result;
+}
+
+// Richer prompt interpretation via Gemini, with the exact same
+// fail-gracefully contract as interpretPrompt(): no API key configured, a
+// network/API error, or a response that doesn't parse/validate all degrade
+// to the deterministic interpretPrompt() rather than throwing or producing
+// an unbounded config. This makes it safe to call unconditionally — callers
+// don't need to branch on whether Gemini is configured.
+//
+// Returns `usedGemini` alongside the config so callers (CLI/web) can tell
+// their user whether Gemini actually ran or silently fell back — a fallback
+// is never a failure from this function's contract, but it IS something a
+// caller who explicitly configured a key would want to know about.
+export interface PromptInterpretationResult {
+  readonly config: PlannerConfig;
+  readonly usedGemini: boolean;
+}
+
+export async function interpretPromptWithGemini(
+  prompt: unknown,
+  options: GeminiOptions = {},
+  base: PlannerConfig = defaultPlannerConfig()
+): Promise<PromptInterpretationResult> {
+  if (typeof prompt !== 'string' || prompt.trim().length === 0) return { config: base, usedGemini: false };
+
+  const apiKey = options.apiKey ?? process.env.GEMINI_API_KEY;
+  if (!apiKey) return { config: interpretPrompt(prompt, base), usedGemini: false };
+
+  const generateContentFn = options.generateContentFn ?? defaultGenerateContent;
+  const model = options.model ?? GEMINI_MODEL_DEFAULT;
+
+  try {
+    const text = await generateContentFn({ apiKey, model, prompt });
+    if (!text) return { config: interpretPrompt(prompt, base), usedGemini: false };
+
+    const parsed: unknown = JSON.parse(text);
+    const intent = validateGeminiIntent(parsed);
+    if (!intent) return { config: interpretPrompt(prompt, base), usedGemini: false };
+
+    return { config: applyGeminiIntent(base, intent), usedGemini: true };
+  } catch {
+    return { config: interpretPrompt(prompt, base), usedGemini: false };
+  }
 }

@@ -5,7 +5,7 @@ import { buildTransitionEdges } from '../../src/retrieval';
 import { buildMusicGraph } from '../../src/graph';
 import { isPlanFailure, planRemix } from '../../src/planner';
 import { createRenderer } from '../../src/renderer';
-import { interpretPrompt } from '../../src/ai';
+import { interpretPromptWithGemini } from '../../src/ai';
 import { ChunkNode } from '../../src/core';
 import { CliOptions, RunResult } from './types';
 
@@ -17,6 +17,7 @@ export function parseArgs(argv: readonly string[]): CliOptions {
   let durationToleranceSec: number | undefined;
   let beamWidth = 6;
   let maxSteps = 30;
+  let geminiApiKey: string | undefined;
 
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
@@ -39,6 +40,9 @@ export function parseArgs(argv: readonly string[]): CliOptions {
       case '--max-steps':
         maxSteps = Number(argv[++i]);
         break;
+      case '--gemini-api-key':
+        geminiApiKey = argv[++i];
+        break;
       default:
         songFiles.push(arg);
     }
@@ -47,7 +51,7 @@ export function parseArgs(argv: readonly string[]): CliOptions {
   if (songFiles.length === 0) throw new Error('mixforge: at least one song file is required');
   if (!outputPath) throw new Error('mixforge: --output <path> is required');
 
-  return { songFiles, prompt, outputPath, targetDurationSec, durationToleranceSec, beamWidth, maxSteps };
+  return { songFiles, prompt, outputPath, targetDurationSec, durationToleranceSec, beamWidth, maxSteps, geminiApiKey };
 }
 
 function songIdFromFile(filePath: string): string {
@@ -64,7 +68,8 @@ export async function runMix(options: CliOptions): Promise<RunResult> {
   const edges = buildTransitionEdges(nodes, { bpmWindow: 20, energyWindow: 0.3, annTopK: nodes.length });
   const graph = buildMusicGraph(nodes, edges);
 
-  let config = interpretPrompt(options.prompt);
+  const interpretation = await interpretPromptWithGemini(options.prompt, { apiKey: options.geminiApiKey });
+  let config = interpretation.config;
   if (options.targetDurationSec !== undefined && Number.isFinite(options.targetDurationSec)) {
     // A flat tolerance (e.g. the AI/default config's 60s) is far too wide
     // relative to typical chunk lengths (~15-20s) for a short target: the
@@ -111,5 +116,6 @@ export async function runMix(options: CliOptions): Promise<RunResult> {
     chunkIds: plan.chunkIds,
     durationSec: rendered.durationSec,
     usedFallbackPartialPlan,
+    usedGemini: interpretation.usedGemini,
   };
 }

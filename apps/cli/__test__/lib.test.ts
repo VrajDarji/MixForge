@@ -35,9 +35,24 @@ describe('parseArgs()', () => {
     const options = parseArgs(['--output', 'out.wav', '--duration', '180', '--duration-tolerance', '20', 'a.wav']);
     expect(options.durationToleranceSec).toBe(20);
   });
+
+  it('parses --gemini-api-key', () => {
+    const options = parseArgs(['--output', 'out.wav', '--gemini-api-key', 'my-key', 'a.wav']);
+    expect(options.geminiApiKey).toBe('my-key');
+  });
 });
 
 describe('runMix() end-to-end against real (synthetic) audio', () => {
+  // interpretPromptWithGemini() falls back to process.env.GEMINI_API_KEY when
+  // options.geminiApiKey isn't given — clear it for this suite so a key set
+  // in the ambient shell/CI environment can never turn this into a real,
+  // network-dependent test.
+  const originalEnvKey = process.env.GEMINI_API_KEY;
+  beforeEach(() => delete process.env.GEMINI_API_KEY);
+  afterAll(() => {
+    if (originalEnvKey !== undefined) process.env.GEMINI_API_KEY = originalEnvKey;
+  });
+
   it('produces a rendered output file from real song files and a prompt', async () => {
     const outputPath = path.join(__dirname, `../../../test-data/audio/.cli-test-output-${Date.now()}.wav`);
     try {
@@ -54,6 +69,7 @@ describe('runMix() end-to-end against real (synthetic) audio', () => {
       expect(result.chunkIds.length).toBeGreaterThan(0);
       expect(result.durationSec).toBeGreaterThan(0);
       expect(result.outputPath).toBe(outputPath);
+      expect(result.usedGemini).toBe(false); // no key configured in this test
     } finally {
       if (fs.existsSync(outputPath)) fs.unlinkSync(outputPath);
     }

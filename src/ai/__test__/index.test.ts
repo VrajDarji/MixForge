@@ -6,5 +6,6 @@ describe('src/ai barrel export', () => {
     expect(typeof ai.interpretPrompt).toBe('function');
     expect(Array.isArray(ai.PROMPT_RULES)).toBe(true);
     expect(typeof ai.NO_REPEAT_CHUNK_CONSTRAINT).toBe('object');
+    expect(typeof ai.interpretPromptWithGemini).toBe('function');
   });
 });

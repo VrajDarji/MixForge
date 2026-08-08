@@ -9,8 +9,14 @@ const FIXTURE_B = path.join(__dirname, '../../../test-data/audio/synthetic-b-120
 describe('web server /api/remix', () => {
   let server: Server;
   let baseUrl: string;
+  // Neither test sends geminiApiKey, so interpretPromptWithGemini() would
+  // fall back to process.env.GEMINI_API_KEY — clear it so a key set in the
+  // ambient shell/CI environment can never turn this into a real,
+  // network-dependent test.
+  const originalEnvKey = process.env.GEMINI_API_KEY;
 
   beforeAll(async () => {
+    delete process.env.GEMINI_API_KEY;
     const app = createApp();
     await new Promise<void>((resolve) => {
       server = app.listen(0, () => {
@@ -23,6 +29,7 @@ describe('web server /api/remix', () => {
   });
 
   afterAll(async () => {
+    if (originalEnvKey !== undefined) process.env.GEMINI_API_KEY = originalEnvKey;
     await new Promise<void>((resolve) => server.close(() => resolve()));
   });
 
@@ -59,6 +66,7 @@ describe('web server /api/remix', () => {
     const chunkIdsHeader = response.headers.get('x-mixforge-chunk-ids');
     expect(durationHeader).not.toBeNull();
     expect(Number(durationHeader)).toBeGreaterThan(0);
+    expect(response.headers.get('x-mixforge-used-gemini')).toBe('false'); // no key sent in this test
     expect(chunkIdsHeader).not.toBeNull();
     const chunkIds = decodeURIComponent(chunkIdsHeader!);
     expect(chunkIds).toContain('->');

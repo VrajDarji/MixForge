@@ -33,7 +33,8 @@ The `--` after `cli` is required (it tells npm to pass the following flags to th
 | Flag | Required | Default | Description |
 |---|---|---|---|
 | `--output <path>` | **yes** | — | Where to write the rendered mix (WAV, mono, 44.1kHz, 16-bit). |
-| `--prompt "<text>"` | no | `""` (no preferences applied) | Free-text description of what you want — see [Prompt Keywords](#prompt-keywords) below. |
+| `--prompt "<text>"` | no | `""` (no preferences applied) | Free-text description of what you want — see [Prompt Interpretation](#prompt-interpretation) below. |
+| `--gemini-api-key <key>` | no | `process.env.GEMINI_API_KEY` | Enables Gemini-based prompt interpretation instead of the built-in keyword rules. |
 | `--duration <seconds>` | no | AI/default config's target (1800s = 30 min, or whatever the prompt implies) | Overrides the target mix duration. When set without `--duration-tolerance`, tolerance auto-scales to `max(15s, 10% of duration)` rather than a flat default. |
 | `--duration-tolerance <seconds>` | no | `max(15, duration * 0.1)` when `--duration` is set; otherwise the config's own default | How close to the target is "close enough" — the planner accepts the first chunk sequence landing within `duration ± tolerance` of raw chunk-time (not the final rendered time — see note below). Tighten this for a closer match; widen it if the planner can't find a valid sequence. |
 | `--beam-width <n>` | no | `6` | How many parallel candidate sequences the planner explores at each step. Higher = more thorough search, slower. |
@@ -66,9 +67,13 @@ If no sequence exactly matches your target duration, MixForge falls back to the 
 
 **The final rendered file will usually be somewhat shorter than `--duration`, even on success.** The planner's duration accounting sums raw chunk lengths; the renderer then overlaps consecutive chunks during each crossfade, which shortens the final file. The CLI prints both numbers (`requested ~180s — rendered output is 127.8s`) so this is visible rather than a silent surprise. If you need to land closer to a specific length, target somewhat higher than you actually want, or tighten `--duration-tolerance` so the planner searches harder for a sequence near your target before accepting one.
 
-## Prompt Keywords
+## Prompt Interpretation
 
-The AI layer (`src/ai/lib.ts`) is a small, explicit keyword table — not an LLM. Multiple keywords in one prompt combine additively. Anything not matched below is silently ignored (your prompt won't error, it just won't add preferences beyond the default config).
+MixForge has two ways to turn your `--prompt` into planner preferences. Both produce the exact same kind of output (a `PlannerConfig` diff) — Gemini is a drop-in richer replacement, not a different pipeline.
+
+### Built-in keyword rules (default, no setup required)
+
+`src/ai/lib.ts`'s `PROMPT_RULES` is a small, explicit keyword table — not an LLM, fully deterministic, zero latency, works offline. Multiple keywords in one prompt combine additively. Anything not matched below is silently ignored (your prompt won't error, it just won't add preferences beyond the default config).
 
 | Say this (case-insensitive) | Effect |
 |---|---|
@@ -81,6 +86,24 @@ The AI layer (`src/ai/lib.ts`) is a small, explicit keyword table — not an LLM
 | "variety" / "diverse" / "mix it up" / "different songs" | Favors pulling from more different songs |
 | "short mix" / "quick mix" / "short set" / "quick set" | Targets a shorter duration (≤10 min) unless `--duration` overrides it |
 | "long mix" / "extended mix" / "long set" / "extended set" / "marathon" | Targets a longer duration (≥60 min) unless `--duration` overrides it |
+
+### Gemini (optional, much richer understanding)
+
+Set a Gemini API key and prompts stop needing exact keywords — "something moody for a rainy drive" or "the kind of thing you'd play at a beach bonfire at sunset" work fine. Get a free key at [aistudio.google.com/apikey](https://aistudio.google.com/apikey).
+
+**CLI:**
+```bash
+export GEMINI_API_KEY=your-key-here
+npm run cli -- --prompt "something moody for a rainy drive" --output mix.wav songs/*.mp3
+# or pass it directly instead of an env var:
+npm run cli -- --gemini-api-key your-key-here --prompt "..." --output mix.wav songs/*.mp3
+```
+
+**Web UI:** paste the key into the "Gemini API key" field (optionally check "remember this key in this browser" to save it in `localStorage` for next time — convenient, but readable by any script on the page, so only do this on a machine you trust).
+
+**How it actually decides the weights:** Gemini is only asked to extract a small set of *bounded, named intents* (guitar/vocal/dance preference, energy level, transition smoothness, song diversity, explicit duration if mentioned) as schema-constrained JSON, each independently clamped to its valid range before use — it never emits raw planner weights directly. Translating an intent into an actual weight change reuses the exact same tested magnitudes the keyword rules use. This means a hallucinated or out-of-range value from the model can produce an unexpected creative interpretation, but never an invalid or unbounded `PlannerConfig`.
+
+**Every failure mode degrades gracefully to the keyword rules**, not an error: no key configured, a network/API error, a malformed response, or an empty response all silently fall back. The CLI prints `prompt interpreted via Gemini` or `...the built-in keyword rules` so you always know which one actually ran; the web UI shows the same in the result panel.
 
 Not implemented (by design, for now): section-aware requests like "avoid long intros" — the current scorer doesn't score section type numerically, so a keyword for it would silently do nothing. See `docs/implementation.md` §9.1.
 
@@ -99,7 +122,7 @@ The CLI (`apps/cli/`) is a thin composition layer — every stage is a plain, in
 import { analyzeSong, decodeAudioFile } from './src/analysis';
 import { buildTransitionEdges } from './src/retrieval';
 import { buildMusicGraph, saveGraphToJson, loadGraphFromJson } from './src/graph';
-import { interpretPrompt } from './src/ai';
+import { interpretPromptWithGemini } from './src/ai'; // or interpretPrompt() for the deterministic keyword-only path
 import { planRemix, isPlanFailure } from './src/planner';
 import { createRenderer } from './src/renderer';
 
@@ -110,7 +133,9 @@ const graph = buildMusicGraph(nodes, edges);
 saveGraphToJson(nodes, edges, 'graph.json'); // rebuild once, reuse many times
 // const graph2 = loadGraphFromJson('graph.json');
 
-const config = interpretPrompt('high energy');
+// Falls back to the keyword rules automatically if apiKey is undefined/invalid,
+// the API errors, or the response doesn't validate — never throws.
+const { config, usedGemini } = await interpretPromptWithGemini('high energy', { apiKey: process.env.GEMINI_API_KEY });
 const result = planRemix(graph, [nodes[0]], config, /* beamWidth */ 6, /* maxSteps */ 30);
 
 if (!isPlanFailure(result)) {

@@ -89,6 +89,7 @@ export function createApp(): Express {
       durationToleranceSec: parseOptionalNumber(req.body.durationTolerance),
       beamWidth: parseOptionalNumber(req.body.beamWidth) ?? 6,
       maxSteps: parseOptionalNumber(req.body.maxSteps) ?? 30,
+      geminiApiKey: typeof req.body.geminiApiKey === 'string' && req.body.geminiApiKey.trim() !== '' ? req.body.geminiApiKey : undefined,
     };
 
     try {
@@ -96,6 +97,7 @@ export function createApp(): Express {
       res.setHeader('X-Mixforge-Chunk-Ids', encodeURIComponent(result.chunkIds.join(' -> ')));
       res.setHeader('X-Mixforge-Duration-Sec', result.durationSec.toFixed(1));
       res.setHeader('X-Mixforge-Used-Fallback', String(result.usedFallbackPartialPlan));
+      res.setHeader('X-Mixforge-Used-Gemini', String(result.usedGemini));
       res.download(outputPath, 'remix.wav', (err) => {
         if (err) console.error('mixforge-web: error sending remix file:', err);
         cleanupPaths([...cleanupTargets, outputPath]);

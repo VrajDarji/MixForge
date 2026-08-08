@@ -54,7 +54,7 @@ Prompt → AI Config → Scoring → Generic Planner → Remix Timeline → Rend
 - **Analysis** (`src/analysis/`) — decodes audio (`ffmpeg`) and extracts real measurements via `essentia.js` (BPM/beat, key, loudness, danceability, an MFCC-based embedding proxy).
 - **Retrieval** (`src/retrieval/`) — a layered candidate funnel (cheap tempo/key/energy filters before the more expensive embedding similarity), per ADR-003.
 - **Renderer** (`src/renderer/`) — turns a planned chunk sequence into real audio: equal-power crossfades, a bounded time-stretch for BPM mismatches, final loudness normalization.
-- **AI** (`src/ai/`) — maps a free-text prompt to a `PlannerConfig` diff via an explicit keyword table (see `USAGE.md` for the full list). Optional — a default config works with no prompt at all. Never touches the graph, planner, or renderer.
+- **AI** (`src/ai/`) — maps a free-text prompt to a `PlannerConfig` diff, either via an explicit keyword table (default, deterministic, offline) or optionally via Gemini for much richer prompt understanding (set `GEMINI_API_KEY`; see `USAGE.md`). Gemini only ever extracts bounded, validated *intent* — the actual weight math stays in tested, clamped code, and every failure mode (no key, network error, bad response) degrades gracefully to the keyword table. Optional — a default config works with no prompt at all. Never touches the graph, planner, or renderer.
 
 Every module boundary above (`planner/` never importing `analysis/`, `renderer/` never importing `planner/` internals, etc.) is enforced at lint time by `eslint.config.js`'s `import/no-restricted-paths` zones, not just by convention.
 
