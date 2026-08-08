@@ -14,5 +14,8 @@
     "noEmit": true,
     "types": ["jest", "node"]
   },
-  "include": ["src/**/*.ts","test-data/**/*.ts"]
+  "include": ["src/**/*.ts","test-data/**/*.ts","apps/**/*.ts"],
+  "ts-node": {
+    "files": true
+  }
 }
