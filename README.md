@@ -19,18 +19,26 @@ All 8 phases of the design are implemented and wired end to end:
 | 5 | Real audio analysis, retrieval, graph persistence | ✅ |
 | 6 | Renderer (crossfade, time-stretch, loudness) | ✅ |
 | 7 | AI config layer (prompt → planner preferences) | ✅ |
-| 8 | CLI (`apps/cli`) | ✅ |
+| 8 | CLI (`apps/cli`) + web UI (`apps/web`) | ✅ |
 
-133 tests passing, `npm run lint` and `npm run build` clean. See [USAGE.md](./USAGE.md) for how to actually run it.
+137 tests passing, `npm run lint` and `npm run build` clean. See [USAGE.md](./USAGE.md) for how to actually run it.
 
 ## Quick Start
 
+**CLI:**
 ```bash
 npm install
 npm run cli -- --prompt "high energy dance mix" --output my-mix.wav song1.mp3 song2.mp3 song3.mp3
 ```
 
-That decodes each song, extracts BPM/key/energy/loudness measurements, builds a transition graph, searches it for the best sequence matching your prompt, renders the result with crossfades, and writes `my-mix.wav`. Full flag reference and examples in [USAGE.md](./USAGE.md).
+**Or a browser UI** — pick songs from a file picker, fill in a form, download the result:
+```bash
+npm install
+npm run web
+# open http://localhost:4173
+```
+
+Either way: MixForge decodes each song, extracts BPM/key/energy/loudness measurements, builds a transition graph, searches it for the best sequence matching your prompt, renders the result with crossfades, and gives you back a WAV file. Full flag reference and examples in [USAGE.md](./USAGE.md).
 
 ## Architecture
 

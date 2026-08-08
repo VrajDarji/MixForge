@@ -1,0 +1,362 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>MixForge</title>
+<style>
+  :root {
+    color-scheme: dark;
+    --bg: #0f1115;
+    --panel: #171a21;
+    --border: #2a2f3a;
+    --text: #e7e9ee;
+    --muted: #9aa3b2;
+    --accent: #7c5cff;
+    --accent-hover: #6a4bee;
+    --error: #ff6b6b;
+    --success: #37d67a;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    min-height: 100vh;
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    display: flex;
+    justify-content: center;
+    padding: 40px 16px;
+  }
+  main {
+    width: 100%;
+    max-width: 640px;
+  }
+  h1 {
+    font-size: 1.75rem;
+    margin: 0 0 4px;
+  }
+  .subtitle {
+    color: var(--muted);
+    margin: 0 0 28px;
+    font-size: 0.95rem;
+  }
+  .panel {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 24px;
+    margin-bottom: 20px;
+  }
+  label {
+    display: block;
+    font-size: 0.85rem;
+    font-weight: 600;
+    margin-bottom: 6px;
+    color: var(--text);
+  }
+  .field {
+    margin-bottom: 18px;
+  }
+  .field:last-child {
+    margin-bottom: 0;
+  }
+  .hint {
+    color: var(--muted);
+    font-size: 0.78rem;
+    margin-top: 4px;
+  }
+  input[type="text"],
+  input[type="number"] {
+    width: 100%;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 10px 12px;
+    color: var(--text);
+    font-size: 0.95rem;
+  }
+  input[type="text"]:focus,
+  input[type="number"]:focus,
+  input[type="file"]:focus {
+    outline: 2px solid var(--accent);
+    outline-offset: 1px;
+  }
+  .row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 14px;
+  }
+  .file-drop {
+    border: 2px dashed var(--border);
+    border-radius: 10px;
+    padding: 24px;
+    text-align: center;
+    cursor: pointer;
+    transition: border-color 0.15s ease;
+  }
+  .file-drop:hover, .file-drop.dragover {
+    border-color: var(--accent);
+  }
+  .file-drop input[type="file"] {
+    display: none;
+  }
+  #file-list {
+    margin-top: 12px;
+    font-size: 0.85rem;
+    color: var(--text);
+    text-align: left;
+  }
+  #file-list .file-name {
+    padding: 3px 0;
+    border-bottom: 1px solid var(--border);
+  }
+  button {
+    width: 100%;
+    background: var(--accent);
+    color: white;
+    border: none;
+    border-radius: 8px;
+    padding: 13px 16px;
+    font-size: 1rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 0.15s ease;
+  }
+  button:hover:not(:disabled) {
+    background: var(--accent-hover);
+  }
+  button:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+  }
+  .status {
+    padding: 12px 14px;
+    border-radius: 8px;
+    font-size: 0.9rem;
+    margin-bottom: 20px;
+  }
+  .status[hidden] { display: none; }
+  .status-processing { background: #21263a; color: #b9c3ff; }
+  .status-done { background: #16301f; color: var(--success); }
+  .status-error { background: #3a1f22; color: var(--error); }
+  .spinner {
+    display: inline-block;
+    width: 14px;
+    height: 14px;
+    border: 2px solid rgba(255,255,255,0.3);
+    border-top-color: currentColor;
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+    margin-right: 8px;
+    vertical-align: -2px;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  #result[hidden] { display: none; }
+  audio { width: 100%; margin-bottom: 14px; }
+  .download-btn {
+    display: block;
+    text-align: center;
+    text-decoration: none;
+    background: var(--success);
+    color: #06210f;
+    border-radius: 8px;
+    padding: 12px;
+    font-weight: 700;
+    margin-bottom: 14px;
+  }
+  .meta {
+    font-size: 0.8rem;
+    color: var(--muted);
+    line-height: 1.6;
+    word-break: break-word;
+  }
+  .meta strong { color: var(--text); }
+  #fallback-warning {
+    background: #3a2f16;
+    color: #f2c464;
+    padding: 8px 10px;
+    border-radius: 6px;
+    font-size: 0.8rem;
+    margin-bottom: 12px;
+  }
+  #fallback-warning[hidden] { display: none; }
+  footer {
+    text-align: center;
+    color: var(--muted);
+    font-size: 0.75rem;
+    margin-top: 24px;
+  }
+  footer a { color: var(--muted); }
+</style>
+</head>
+<body>
+<main>
+  <h1>MixForge</h1>
+  <p class="subtitle">Pick songs from your device, describe the vibe, get a remix back.</p>
+
+  <div id="status" class="status" hidden></div>
+
+  <form id="remix-form">
+    <div class="panel">
+      <div class="field">
+        <label for="songs">Songs</label>
+        <label class="file-drop" id="file-drop">
+          <input type="file" id="songs" name="songs" multiple accept="audio/*,.mp3,.wav,.flac,.m4a,.ogg" />
+          <span id="drop-label">Click to choose audio files, or drag them here</span>
+          <div id="file-list"></div>
+        </label>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="field">
+        <label for="prompt">Prompt (optional)</label>
+        <input type="text" id="prompt" name="prompt" placeholder='e.g. "more vocal-forward, high energy"' />
+        <div class="hint">Keywords like guitar, vocal, energetic, chill, smooth, variety, short mix, long mix all shape the result.</div>
+      </div>
+
+      <div class="row">
+        <div class="field">
+          <label for="duration">Target duration (sec)</label>
+          <input type="number" id="duration" name="duration" min="1" placeholder="e.g. 180" />
+        </div>
+        <div class="field">
+          <label for="durationTolerance">Duration tolerance (sec)</label>
+          <input type="number" id="durationTolerance" name="durationTolerance" min="1" placeholder="auto" />
+        </div>
+      </div>
+
+      <div class="row">
+        <div class="field">
+          <label for="beamWidth">Beam width</label>
+          <input type="number" id="beamWidth" name="beamWidth" min="1" value="6" />
+        </div>
+        <div class="field">
+          <label for="maxSteps">Max steps</label>
+          <input type="number" id="maxSteps" name="maxSteps" min="1" value="30" />
+        </div>
+      </div>
+    </div>
+
+    <button type="submit" id="generate-btn">Generate remix</button>
+  </form>
+
+  <div id="result" class="panel" hidden>
+    <div id="fallback-warning" hidden>No exact target-duration match was found — this is the closest plan MixForge could build.</div>
+    <audio id="audio-player" controls></audio>
+    <a id="download-link" class="download-btn" download="remix.wav">Download remix.wav</a>
+    <div class="meta">
+      <div><strong>Rendered duration:</strong> <span id="result-duration">—</span></div>
+      <div style="margin-top:6px;"><strong>Chunk sequence:</strong> <span id="result-chunks">—</span></div>
+    </div>
+  </div>
+
+  <footer>MixForge — analyze once, plan many times.</footer>
+</main>
+
+<script>
+  const fileInput = document.getElementById('songs');
+  const fileDrop = document.getElementById('file-drop');
+  const fileList = document.getElementById('file-list');
+  const dropLabel = document.getElementById('drop-label');
+  const form = document.getElementById('remix-form');
+  const generateBtn = document.getElementById('generate-btn');
+  const statusEl = document.getElementById('status');
+  const resultEl = document.getElementById('result');
+
+  function renderFileList() {
+    const files = Array.from(fileInput.files || []);
+    if (files.length === 0) {
+      fileList.textContent = '';
+      dropLabel.textContent = 'Click to choose audio files, or drag them here';
+      return;
+    }
+    dropLabel.textContent = files.length + ' file' + (files.length > 1 ? 's' : '') + ' selected';
+    fileList.innerHTML = files.map((f) => '<div class="file-name">' + escapeHtml(f.name) + '</div>').join('');
+  }
+
+  function escapeHtml(s) {
+    const div = document.createElement('div');
+    div.textContent = s;
+    return div.innerHTML;
+  }
+
+  fileInput.addEventListener('change', renderFileList);
+
+  fileDrop.addEventListener('dragover', (e) => {
+    e.preventDefault();
+    fileDrop.classList.add('dragover');
+  });
+  fileDrop.addEventListener('dragleave', () => fileDrop.classList.remove('dragover'));
+  fileDrop.addEventListener('drop', (e) => {
+    e.preventDefault();
+    fileDrop.classList.remove('dragover');
+    if (e.dataTransfer && e.dataTransfer.files.length) {
+      fileInput.files = e.dataTransfer.files;
+      renderFileList();
+    }
+  });
+
+  function setStatus(kind, message, withSpinner) {
+    statusEl.className = 'status status-' + kind;
+    statusEl.innerHTML = (withSpinner ? '<span class="spinner"></span>' : '') + escapeHtml(message);
+    statusEl.hidden = false;
+  }
+
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+
+    if (!fileInput.files || fileInput.files.length === 0) {
+      setStatus('error', 'Please select at least one song.');
+      return;
+    }
+
+    const formData = new FormData();
+    for (const file of fileInput.files) formData.append('songs', file);
+    formData.append('prompt', document.getElementById('prompt').value);
+    formData.append('duration', document.getElementById('duration').value);
+    formData.append('durationTolerance', document.getElementById('durationTolerance').value);
+    formData.append('beamWidth', document.getElementById('beamWidth').value);
+    formData.append('maxSteps', document.getElementById('maxSteps').value);
+
+    generateBtn.disabled = true;
+    resultEl.hidden = true;
+    setStatus('processing', 'Analyzing songs and building your remix… this can take a while for full-length real songs.', true);
+
+    try {
+      const response = await fetch('/api/remix', { method: 'POST', body: formData });
+      if (!response.ok) {
+        let message = 'Server error (' + response.status + ')';
+        try {
+          const errBody = await response.json();
+          if (errBody && errBody.error) message = errBody.error;
+        } catch (parseErr) { /* response wasn't JSON — keep the generic message */ }
+        throw new Error(message);
+      }
+
+      const durationSec = response.headers.get('X-Mixforge-Duration-Sec');
+      const chunkIdsHeader = response.headers.get('X-Mixforge-Chunk-Ids');
+      const usedFallback = response.headers.get('X-Mixforge-Used-Fallback') === 'true';
+
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+
+      document.getElementById('audio-player').src = url;
+      const downloadLink = document.getElementById('download-link');
+      downloadLink.href = url;
+      document.getElementById('result-duration').textContent = durationSec ? durationSec + 's' : 'unknown';
+      document.getElementById('result-chunks').textContent = chunkIdsHeader ? decodeURIComponent(chunkIdsHeader) : 'unknown';
+      document.getElementById('fallback-warning').hidden = !usedFallback;
+
+      resultEl.hidden = false;
+      setStatus('done', 'Remix ready — play it below or download it.');
+    } catch (err) {
+      setStatus('error', err && err.message ? err.message : String(err));
+    } finally {
+      generateBtn.disabled = false;
+    }
+  });
+</script>
+</body>
+</html>

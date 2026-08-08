@@ -8,6 +8,18 @@ npm install
 
 That's it — `ffmpeg-static` bundles its own FFmpeg binary (no separate install needed) and `essentia.js` runs via WebAssembly (no Python, no native build step).
 
+## Web UI
+
+A single-page browser UI (`apps/web/public/index.html`) for people who don't want a terminal:
+
+```bash
+npm run web
+```
+
+Then open **http://localhost:4173** (change the port with `PORT=<n> npm run web`). Pick your song files, optionally fill in a prompt and the other flags, click **Generate remix** — the page shows progress, then gives you an inline player and a download button once it's done.
+
+Under the hood this is a small Express server (`apps/web/server.ts`) that accepts the uploaded files and calls the exact same `runMix()` the CLI uses (`apps/cli/lib.ts`) — same analysis, same planner, same renderer, just driven from a browser instead of argv. Uploaded files and the rendered output are written to a temp directory and cleaned up after the response is sent.
+
 ## Running the CLI
 
 ```bash
