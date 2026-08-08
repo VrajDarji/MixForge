@@ -74,7 +74,7 @@ export function selectDiverseBeam(candidates: SearchState[], width: number): Sea
   for (const candidate of merged) {
     if (selected.length >= width) break;
     const count = nodeCounts.get(candidate.resources.currentNodeId) ?? 0;
-    if (count >= 1 && selected.length < width - 1) {
+    if (count >= 1) {
       deferred.push(candidate);
       continue;
     }
@@ -106,6 +106,7 @@ export function toRemixPlan(state: SearchState): RemixPlan {
 }
 
 export function handleDeadEnd(beam: SearchState[], config: PlannerConfig): PlanResult {
+  if (beam.length === 0) return { failure: 'no_valid_path' };
   const best = [...beam].sort(compareStatesByScoreThenId)[0];
   const relaxedTolerance = config.durationToleranceSec * 3;
   if (Math.abs(best.resources.elapsedDurationBucket - config.targetDurationSec) <= relaxedTolerance) {
@@ -121,7 +122,7 @@ export function planRemix(
   beamWidth: number,
   maxSteps: number
 ): PlanResult {
-  if (startCandidates.length === 0 || beamWidth <= 0) {
+  if (startCandidates.length === 0 || !Number.isFinite(beamWidth) || beamWidth < 1) {
     return { failure: 'no_valid_path' };
   }
 

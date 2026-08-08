@@ -76,6 +76,7 @@ export interface PlannerConfig {
     readonly energyCurveAdherence: number;
     readonly diversity: number;
     readonly durationAdherence: number;
+    /** Not currently applied by any scorer or planner code — see src/scorer/lib.ts's evaluatePath comment. */
     readonly repetitionPenalty: number;
   };
   readonly targetDurationSec: number;

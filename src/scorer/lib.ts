@@ -102,6 +102,8 @@ export function evaluatePath(resources: SearchResources, config: PlannerConfig):
     w.energyCurveAdherence * energyScore +
     w.diversity * diversityScore
   );
-  // repetitionPenalty is applied by the planner (Phase 4) from
-  // usedChunkIds/usedSongIds — out of scope here, per implementation.md §7.4.
+  // repetitionPenalty is NOT currently applied anywhere (Phase 4's planner
+  // doesn't compute it either) — PlannerConfig.pathObjectiveWeights.repetitionPenalty
+  // is presently a dead config knob. A caller wanting to prevent repeats must
+  // supply their own HardConstraint using SearchResources.usedChunkIds/usedSongIds.
 }

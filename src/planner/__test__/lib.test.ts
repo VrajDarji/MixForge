@@ -270,6 +270,19 @@ describe('selectDiverseBeam()', () => {
     expect(result).toHaveLength(2);
     expect(result.map((s) => s.resources.currentNodeId).sort()).toEqual(['A', 'B']);
   });
+
+  it('preserves diversity even at beamWidth 2', () => {
+    const dominantNode = [
+      state('A', 10, { elapsedDurationBucket: 10 }),
+      state('A', 9, { elapsedDurationBucket: 11 }),
+    ];
+    const diverseCandidate = state('B', 5, { elapsedDurationBucket: 99 });
+
+    const result = selectDiverseBeam([...dominantNode, diverseCandidate], 2);
+
+    const distinctNodes = new Set(result.map((s) => s.resources.currentNodeId));
+    expect(distinctNodes.size).toBeGreaterThan(1);
+  });
 });
 
 describe('isWithinTargetDuration()', () => {
@@ -323,6 +336,12 @@ describe('handleDeadEnd()', () => {
       failure: 'no_valid_path',
       bestPartial: { chunkIds: ['A1', 'A2'], totalScore: 1, estimatedDurationSec: 100, diagnostics: { nearFailedConstraints: [], prunedCandidateCount: 0 } },
     });
+  });
+
+  it('returns a well-formed failure instead of throwing on an empty beam', () => {
+    const result = handleDeadEnd([], configWith([]));
+    expect(isPlanFailure(result)).toBe(true);
+    expect((result as { failure: string }).failure).toBe('no_valid_path');
   });
 });
 
@@ -386,5 +405,20 @@ describe('planRemix()', () => {
     const result = planRemix(fixtureGraph, [findNode('A1')], config, 0, 5);
     expect(isPlanFailure(result)).toBe(true);
     expect((result as { failure: string }).failure).toBe('no_valid_path');
+  });
+
+  it('returns a well-formed failure instead of throwing when beamWidth is NaN', () => {
+    const config = { ...configWith([]), targetDurationSec: 24, durationToleranceSec: 4 };
+    const result = planRemix(fixtureGraph, [findNode('A1')], config, NaN, 5);
+    expect(isPlanFailure(result)).toBe(true);
+  });
+
+  it('does not crash when a graph edge points at a node that does not exist', () => {
+    const malformedGraph = buildTestGraph(
+      [findNode('A1')],
+      [{ from: 'A1', to: 'GHOST', signals: findEdge('A1', 'A2').signals }]
+    );
+    const config = { ...configWith([]), targetDurationSec: 8, durationToleranceSec: 4 };
+    expect(() => planRemix(malformedGraph, [findNode('A1')], config, 4, 5)).not.toThrow();
   });
 });

@@ -453,23 +453,37 @@ function selectDiverseBeam(candidates: SearchState[], width: number): SearchStat
   // best-scoring state per key. This is the approximate-DP step —
   // two states sharing a key are TREATED as equivalent, not proven so.
   const byKey = new Map<string, SearchState>();
-  for (const c of candidates) {
-    const key = mergeKey(c.resources);
+  for (const candidate of candidates) {
+    const key = mergeKey(candidate.resources);
     const existing = byKey.get(key);
-    if (!existing || c.accumulatedScore > existing.accumulatedScore) byKey.set(key, c);
+    if (!existing || candidate.accumulatedScore > existing.accumulatedScore) byKey.set(key, candidate);
   }
 
-  // Diverse top-K: greedily fill the beam, reserving slots so the beam
-  // doesn't collapse into K near-identical continuations of one prefix.
-  const merged = [...byKey.values()].sort((a, b) => b.accumulatedScore - a.accumulatedScore);
+  // Diverse top-K: greedily fill the beam, deferring every same-node
+  // duplicate (ADR-008) so the beam doesn't collapse into K near-identical
+  // continuations of one prefix — this applies at every beam width,
+  // including width 2, not just widths > 2.
+  const merged = [...byKey.values()].sort(compareStatesByScoreThenId);
   const selected: SearchState[] = [];
+  const deferred: SearchState[] = [];
   const nodeCounts = new Map<string, number>();
-  for (const c of merged) {
+  for (const candidate of merged) {
     if (selected.length >= width) break;
-    const count = nodeCounts.get(c.resources.currentNodeId) ?? 0;
-    if (count >= 1 && selected.length < width - 1) continue;
-    selected.push(c);
-    nodeCounts.set(c.resources.currentNodeId, count + 1);
+    const count = nodeCounts.get(candidate.resources.currentNodeId) ?? 0;
+    if (count >= 1) {
+      deferred.push(candidate);
+      continue;
+    }
+    selected.push(candidate);
+    nodeCounts.set(candidate.resources.currentNodeId, count + 1);
+  }
+  // Backfill any still-open slots with the next-best deferred candidates —
+  // the diversity cap only needs to reserve a slot for a non-dominant node,
+  // not permanently exclude the dominant node's other candidates once that
+  // guarantee is already satisfied.
+  for (const candidate of deferred) {
+    if (selected.length >= width) break;
+    selected.push(candidate);
   }
   return selected;
 }
