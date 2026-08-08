@@ -1,4 +1,6 @@
 import { ChunkNode, SearchResources, SearchState, TransitionEdge } from '../core';
+import { HardConstraint, PlannerConfig } from '../core';
+import { calibrate } from '../scorer';
 
 // ADR-007 Class B: "last N only" per SearchResources.recentSectionTypes's
 // comment in core/types.ts — 3 is small enough to matter for merge-key
@@ -41,4 +43,8 @@ export function updateResources(
     usedSongIds: new Set([...resources.usedSongIds, nextNode.songId]),
     history: [...resources.history, nextNode.id],
   };
+}
+
+export function isValidResources(edge: TransitionEdge, resources: SearchResources, config: PlannerConfig): boolean {
+  return config.hardConstraints.every((constraint: HardConstraint) => constraint.check(edge, resources, calibrate));
 }
