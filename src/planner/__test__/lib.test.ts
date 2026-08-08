@@ -10,13 +10,33 @@ import { SearchState } from '../../core';
 import { handleDeadEnd, isWithinTargetDuration, toRemixPlan } from '../lib';
 import { isPlanFailure } from '../utils';
 import { planRemix } from '../lib';
-import { buildMusicGraph } from '../../graph';
+import { MusicGraph } from '../../core';
 
 function findNode(id: string): ChunkNode {
   return synthNodes.find((n) => n.id === id)!;
 }
 function findEdge(from: string, to: string): TransitionEdge {
   return synthEdges.find((e) => e.from === from && e.to === to)!;
+}
+
+// src/planner/ must never import src/graph/ (ADR-006; enforced by
+// eslint.config.js's import-boundary zone, which restricts every file
+// under src/planner/**, including tests). Build a MusicGraph-shaped
+// fixture by hand instead of using src/graph/'s buildMusicGraph().
+function buildTestGraph(nodes: readonly ChunkNode[], edges: readonly TransitionEdge[]): MusicGraph {
+  const nodeMap = new Map(nodes.map((node) => [node.id, node] as const));
+  const edgeMap = new Map<string, TransitionEdge[]>();
+  for (const edge of edges) {
+    const outgoing = edgeMap.get(edge.from) ?? [];
+    outgoing.push(edge);
+    edgeMap.set(edge.from, outgoing);
+  }
+  return {
+    nodes: nodeMap,
+    edges: edgeMap,
+    getOutgoingEdges: (nodeId) => edgeMap.get(nodeId) ?? [],
+    getNode: (nodeId) => nodeMap.get(nodeId),
+  };
 }
 
 function m<T>(value: T): Measurement<T> {
@@ -306,7 +326,7 @@ describe('handleDeadEnd()', () => {
   });
 });
 
-const fixtureGraph = buildMusicGraph(synthNodes, synthEdges);
+const fixtureGraph = buildTestGraph(synthNodes, synthEdges);
 
 describe('planRemix()', () => {
   it('builds A1 -> A2 -> B2 and never traverses the known-bad B2->A3 edge, when the target is reachable', () => {
