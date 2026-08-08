@@ -140,7 +140,15 @@ export function interpretPrompt(prompt: unknown, base: PlannerConfig = defaultPl
 // landed in the range its description asked for.
 // ============================================================================
 
-const GEMINI_MODEL_DEFAULT = 'gemini-2.5-flash';
+// 'gemini-2.5-flash' (the pinned version this was originally written against)
+// returned a 404 "no longer available to new users" for a real API key
+// tested during development — Google deprecates/rotates specific dated
+// model ids over time. 'gemini-flash-latest' is a stable alias Google
+// maintains to always point at their current recommended flash model,
+// which is the right default for code that shouldn't need updating every
+// time a specific dated model is retired. Override via GeminiOptions.model
+// if you need to pin an exact version.
+const GEMINI_MODEL_DEFAULT = 'gemini-flash-latest';
 
 const GEMINI_SYSTEM_INSTRUCTION =
   'You configure music remix preferences for MixForge, an automatic DJ mix generator. ' +
