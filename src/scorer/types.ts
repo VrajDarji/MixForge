@@ -1,2 +1,6 @@
-// Populated in Task 2 with EdgeEvalResult.
-export {};
+// Scorer-only types. No logic — see ./lib.ts.
+
+export interface EdgeEvalResult {
+  readonly feasible: boolean;
+  readonly qualityScore: number;
+}

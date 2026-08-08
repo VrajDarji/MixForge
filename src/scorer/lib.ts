@@ -1,4 +1,6 @@
 import { CalibrationFn } from '../core';
+import { EdgeSignals, PlannerConfig, TransitionEdge } from '../core';
+import { EdgeEvalResult } from './types';
 
 // ADR-009: pulls low-confidence values toward neutral before harsh
 // non-compensatory composition, rather than letting one noisy detector
@@ -8,3 +10,31 @@ export const calibrate: CalibrationFn = (m, toScalar, neutral = 0.5) => {
   const raw = toScalar(m.value);
   return neutral + m.confidence * (raw - neutral);
 };
+
+// ADR-005 feasibility stage: below this per-dimension calibrated floor, a
+// transition is rejected outright, not merely scored low. This is what
+// keeps a catastrophic transition from ever reaching the compensatory path
+// score (design.md §11's edge score is intentionally non-compensatory).
+const MIN_ACCEPTABLE = 0.3;
+
+export function evaluateEdge(edge: TransitionEdge, config: PlannerConfig): EdgeEvalResult {
+  const calibrated: Record<keyof Omit<EdgeSignals, 'estimatedCrossfadeSec'>, number> = {
+    bpmDelta: calibrate(edge.signals.bpmDelta, (v) => 1 - Math.min(Math.abs(v) / 20, 1)),
+    keyCompatibility: calibrate(edge.signals.keyCompatibility, (v) => (v ? 1 : 0)),
+    beatAlignment: calibrate(edge.signals.beatAlignment, (v) => v),
+    embeddingSimilarity: calibrate(edge.signals.embeddingSimilarity, (v) => v),
+    loudnessDelta: calibrate(edge.signals.loudnessDelta, (v) => 1 - Math.min(Math.abs(v) / 6, 1)),
+  };
+
+  const feasible = Object.values(calibrated).every((v) => v >= MIN_ACCEPTABLE);
+  if (!feasible) return { feasible: false, qualityScore: 0 };
+
+  // Quality ranking among survivors only: harsh geometric mean, so a
+  // weak-but-still-feasible dimension drags the score down without being
+  // an outright rejection (ADR-005 stage 2).
+  const weighted = Object.entries(calibrated).map(([key, v]) =>
+    Math.pow(v, config.edgeWeights[key as keyof EdgeSignals] ?? 1)
+  );
+  const product = weighted.reduce((a, b) => a * b, 1);
+  return { feasible: true, qualityScore: Math.pow(product, 1 / weighted.length) };
+}
