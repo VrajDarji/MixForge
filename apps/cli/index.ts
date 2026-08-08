@@ -9,6 +9,13 @@ async function main(): Promise<void> {
     console.warn('mixforge: no target-duration match found — rendered the best partial plan instead.');
   }
   console.log(`mixforge: rendered ${result.chunkIds.length} chunks (${result.durationSec.toFixed(1)}s) -> ${result.outputPath}`);
+  if (options.targetDurationSec !== undefined) {
+    // The planner's internal duration accounting sums raw chunk lengths;
+    // the final render is always somewhat shorter because crossfades
+    // overlap consecutive chunks. Surfacing both numbers here so the gap
+    // is visible rather than silently surprising.
+    console.log(`mixforge: requested ~${options.targetDurationSec}s — rendered output is ${result.durationSec.toFixed(1)}s (crossfade overlap always shortens the final render somewhat vs. the target).`);
+  }
   console.log(`mixforge: chunk sequence: ${result.chunkIds.join(' -> ')}`);
 }
 

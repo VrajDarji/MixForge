@@ -30,6 +30,11 @@ describe('parseArgs()', () => {
   it('throws a clear error when --output is missing', () => {
     expect(() => parseArgs(['a.wav'])).toThrow(/--output/);
   });
+
+  it('parses --duration-tolerance', () => {
+    const options = parseArgs(['--output', 'out.wav', '--duration', '180', '--duration-tolerance', '20', 'a.wav']);
+    expect(options.durationToleranceSec).toBe(20);
+  });
 });
 
 describe('runMix() end-to-end against real (synthetic) audio', () => {

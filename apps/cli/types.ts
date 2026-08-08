@@ -3,6 +3,7 @@ export interface CliOptions {
   readonly prompt: string;
   readonly outputPath: string;
   readonly targetDurationSec?: number;
+  readonly durationToleranceSec?: number;
   readonly beamWidth: number;
   readonly maxSteps: number;
 }

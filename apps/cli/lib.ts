@@ -14,6 +14,7 @@ export function parseArgs(argv: readonly string[]): CliOptions {
   let prompt = '';
   let outputPath = '';
   let targetDurationSec: number | undefined;
+  let durationToleranceSec: number | undefined;
   let beamWidth = 6;
   let maxSteps = 30;
 
@@ -29,6 +30,9 @@ export function parseArgs(argv: readonly string[]): CliOptions {
       case '--duration':
         targetDurationSec = Number(argv[++i]);
         break;
+      case '--duration-tolerance':
+        durationToleranceSec = Number(argv[++i]);
+        break;
       case '--beam-width':
         beamWidth = Number(argv[++i]);
         break;
@@ -43,7 +47,7 @@ export function parseArgs(argv: readonly string[]): CliOptions {
   if (songFiles.length === 0) throw new Error('mixforge: at least one song file is required');
   if (!outputPath) throw new Error('mixforge: --output <path> is required');
 
-  return { songFiles, prompt, outputPath, targetDurationSec, beamWidth, maxSteps };
+  return { songFiles, prompt, outputPath, targetDurationSec, durationToleranceSec, beamWidth, maxSteps };
 }
 
 function songIdFromFile(filePath: string): string {
@@ -62,7 +66,20 @@ export async function runMix(options: CliOptions): Promise<RunResult> {
 
   let config = interpretPrompt(options.prompt);
   if (options.targetDurationSec !== undefined && Number.isFinite(options.targetDurationSec)) {
-    config = { ...config, targetDurationSec: options.targetDurationSec };
+    // A flat tolerance (e.g. the AI/default config's 60s) is far too wide
+    // relative to typical chunk lengths (~15-20s) for a short target: the
+    // planner stops at the FIRST in-tolerance state, not the closest one,
+    // so a wide band mostly means "stop as soon as we cross target-tolerance"
+    // — observed directly producing a 97s render for a 180s target with the
+    // flat 60s default. Scale proportionally unless the caller overrides it.
+    const proportionalTolerance = Math.max(15, options.targetDurationSec * 0.1);
+    config = {
+      ...config,
+      targetDurationSec: options.targetDurationSec,
+      durationToleranceSec: options.durationToleranceSec ?? proportionalTolerance,
+    };
+  } else if (options.durationToleranceSec !== undefined && Number.isFinite(options.durationToleranceSec)) {
+    config = { ...config, durationToleranceSec: options.durationToleranceSec };
   }
 
   // Give the planner one starting candidate per song — its own diverse-beam
