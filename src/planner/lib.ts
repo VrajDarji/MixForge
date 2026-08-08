@@ -3,6 +3,8 @@ import { HardConstraint, PlannerConfig } from '../core';
 import { calibrate } from '../scorer';
 import { mergeKey } from '../core';
 import { compareStatesByScoreThenId } from './utils';
+import { RemixPlan } from '../core';
+import { PlanResult } from './types';
 
 // ADR-007 Class B: "last N only" per SearchResources.recentSectionTypes's
 // comment in core/types.ts — 3 is small enough to matter for merge-key
@@ -86,4 +88,26 @@ export function selectDiverseBeam(candidates: SearchState[], width: number): Sea
     selected.push(candidate);
   }
   return selected;
+}
+
+export function isWithinTargetDuration(resources: SearchResources, config: PlannerConfig): boolean {
+  return Math.abs(resources.elapsedDurationBucket - config.targetDurationSec) <= config.durationToleranceSec;
+}
+
+export function toRemixPlan(state: SearchState): RemixPlan {
+  return {
+    chunkIds: state.resources.history,
+    totalScore: state.accumulatedScore,
+    estimatedDurationSec: state.resources.elapsedDurationBucket,
+    diagnostics: { nearFailedConstraints: [], prunedCandidateCount: 0 },
+  };
+}
+
+export function handleDeadEnd(beam: SearchState[], config: PlannerConfig): PlanResult {
+  const best = [...beam].sort(compareStatesByScoreThenId)[0];
+  const relaxedTolerance = config.durationToleranceSec * 3;
+  if (Math.abs(best.resources.elapsedDurationBucket - config.targetDurationSec) <= relaxedTolerance) {
+    return toRemixPlan(best);
+  }
+  return { failure: 'no_valid_path', bestPartial: toRemixPlan(best) };
 }

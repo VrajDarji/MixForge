@@ -7,6 +7,8 @@ import { HardConstraint, PlannerConfig, SearchResources } from '../../core';
 import { selectDiverseBeam } from '../lib';
 import { compareStatesByScoreThenId } from '../utils';
 import { SearchState } from '../../core';
+import { handleDeadEnd, isWithinTargetDuration, toRemixPlan } from '../lib';
+import { isPlanFailure } from '../utils';
 
 function findNode(id: string): ChunkNode {
   return synthNodes.find((n) => n.id === id)!;
@@ -245,5 +247,59 @@ describe('selectDiverseBeam()', () => {
     const result = selectDiverseBeam([state('A', 10), state('B', 5)], 5);
     expect(result).toHaveLength(2);
     expect(result.map((s) => s.resources.currentNodeId).sort()).toEqual(['A', 'B']);
+  });
+});
+
+describe('isWithinTargetDuration()', () => {
+  it('is true when elapsed exactly matches target', () => {
+    const resources = baseHardResources({ elapsedDurationBucket: 1800 });
+    expect(isWithinTargetDuration(resources, configWith([]))).toBe(true);
+  });
+
+  it('is true at the exact tolerance boundary (inclusive)', () => {
+    const resources = baseHardResources({ elapsedDurationBucket: 1830 }); // 30 over, tolerance is 30
+    expect(isWithinTargetDuration(resources, configWith([]))).toBe(true);
+  });
+
+  it('is false just past the tolerance boundary', () => {
+    const resources = baseHardResources({ elapsedDurationBucket: 1831 });
+    expect(isWithinTargetDuration(resources, configWith([]))).toBe(false);
+  });
+});
+
+describe('toRemixPlan()', () => {
+  it('maps a SearchState to a well-formed RemixPlan with empty diagnostics', () => {
+    const s = state('A2', 4.5, { history: ['A1', 'A2'], elapsedDurationBucket: 16 });
+    const plan = toRemixPlan(s);
+    expect(plan.chunkIds).toEqual(['A1', 'A2']);
+    expect(plan.totalScore).toBe(4.5);
+    expect(plan.estimatedDurationSec).toBe(16);
+    expect(plan.diagnostics).toEqual({ nearFailedConstraints: [], prunedCandidateCount: 0 });
+  });
+});
+
+describe('handleDeadEnd()', () => {
+  it('returns a successful RemixPlan for the best state when within 3x tolerance', () => {
+    const worse = state('A2', 1, { elapsedDurationBucket: 1700, history: ['A1', 'A2'] });
+    const better = state('B2', 2, { elapsedDurationBucket: 1750, history: ['A1', 'B2'] });
+    const config = configWith([]); // targetDurationSec 1800, durationToleranceSec 30 -> relaxed 90
+
+    const result = handleDeadEnd([worse, better], config);
+
+    expect(isPlanFailure(result)).toBe(false);
+    expect((result as ReturnType<typeof toRemixPlan>).chunkIds).toEqual(['A1', 'B2']);
+  });
+
+  it('returns a well-formed failure, not a throw, when even the best state misses the relaxed tolerance', () => {
+    const farOff = state('A2', 1, { elapsedDurationBucket: 100, history: ['A1', 'A2'] });
+    const config = configWith([]); // target 1800, relaxed tolerance 90 -> 100 is nowhere close
+
+    const result = handleDeadEnd([farOff], config);
+
+    expect(isPlanFailure(result)).toBe(true);
+    expect(result).toEqual({
+      failure: 'no_valid_path',
+      bestPartial: { chunkIds: ['A1', 'A2'], totalScore: 1, estimatedDurationSec: 100, diagnostics: { nearFailedConstraints: [], prunedCandidateCount: 0 } },
+    });
   });
 });
