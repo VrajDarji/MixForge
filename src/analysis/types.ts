@@ -4,6 +4,7 @@ export interface DecodedAudio {
   readonly samples: Float32Array; // mono, downmixed
   readonly sampleRate: number;
   readonly durationSec: number;
+  readonly sourceFilePath: string;
 }
 
 export interface AnalysisParams {

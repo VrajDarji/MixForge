@@ -40,7 +40,7 @@ export function decodeAudioFile(filePath: string): DecodedAudio {
     const buffer = fs.readFileSync(tempWavPath);
     const decoded = wav.decode(buffer);
     const samples = decoded.channelData[0];
-    return { samples, sampleRate: decoded.sampleRate, durationSec: samples.length / decoded.sampleRate };
+    return { samples, sampleRate: decoded.sampleRate, durationSec: samples.length / decoded.sampleRate, sourceFilePath: filePath };
   } finally {
     fs.unlinkSync(tempWavPath);
   }
@@ -138,6 +138,7 @@ export function analyzeSong(
       endTimeSec,
       bars: params.barsPerChunk,
       signals,
+      sourceFilePath: decoded.sourceFilePath,
     });
   }
   return nodes;

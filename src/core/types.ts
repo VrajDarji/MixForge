@@ -32,6 +32,8 @@ export interface ChunkNode {
   readonly endTimeSec: number;
   readonly bars: number;
   readonly signals: NodeSignals;
+  /** Optional: path to the original song's audio file, for the renderer (Phase 6) to load real samples from. Undefined for synthetic/test fixtures that are never rendered. Additive field — does not break any existing construction of ChunkNode. */
+  readonly sourceFilePath?: string;
 }
 
 export interface EdgeSignals {
