@@ -65,13 +65,25 @@ export function selectDiverseBeam(candidates: SearchState[], width: number): Sea
 
   const merged = [...byKey.values()].sort(compareStatesByScoreThenId);
   const selected: SearchState[] = [];
+  const deferred: SearchState[] = [];
   const nodeCounts = new Map<string, number>();
   for (const candidate of merged) {
     if (selected.length >= width) break;
     const count = nodeCounts.get(candidate.resources.currentNodeId) ?? 0;
-    if (count >= 1 && selected.length < width - 1) continue;
+    if (count >= 1 && selected.length < width - 1) {
+      deferred.push(candidate);
+      continue;
+    }
     selected.push(candidate);
     nodeCounts.set(candidate.resources.currentNodeId, count + 1);
+  }
+  // Backfill any still-open slots with the next-best deferred candidates —
+  // the diversity cap only needs to reserve a slot for a non-dominant node,
+  // not permanently exclude the dominant node's other candidates once that
+  // guarantee is already satisfied.
+  for (const candidate of deferred) {
+    if (selected.length >= width) break;
+    selected.push(candidate);
   }
   return selected;
 }

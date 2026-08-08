@@ -234,5 +234,16 @@ describe('selectDiverseBeam()', () => {
     expect(result.some((s) => s.resources.currentNodeId === 'B')).toBe(true);
     // A naive top-3-by-score-alone selection would be [A(10), A(9), A(8)] — prove we didn't do that.
     expect(result.some((s) => s.accumulatedScore === 8)).toBe(false);
+    // The diversity reservation must not under-fill the beam: once the
+    // reserved slot is satisfied (B(5)), the next-best deferred candidate
+    // (A(9)) should backfill the remaining slot up to full width.
+    expect(result).toHaveLength(3);
+    expect(result.some((s) => s.accumulatedScore === 9)).toBe(true);
+  });
+
+  it('returns exactly the available distinct-node candidates when there is nothing left to backfill', () => {
+    const result = selectDiverseBeam([state('A', 10), state('B', 5)], 5);
+    expect(result).toHaveLength(2);
+    expect(result.map((s) => s.resources.currentNodeId).sort()).toEqual(['A', 'B']);
   });
 });
