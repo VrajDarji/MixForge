@@ -39,7 +39,16 @@ export function evaluateEdge(edge: TransitionEdge, config: PlannerConfig): EdgeE
     Math.pow(v, config.edgeWeights[key as keyof EdgeSignals] ?? 1)
   );
   const product = weighted.reduce((a, b) => a * b, 1);
-  return { feasible: true, qualityScore: Math.pow(product, 1 / weighted.length) };
+  // Root by total weight, not dimension count: a weight of 0 must truly
+  // exclude a dimension (rather than counting its v^0=1 term against a
+  // fixed root, which would inflate the score), and uniformly scaling all
+  // weights must be a no-op.
+  const totalWeight = Object.entries(calibrated).reduce(
+    (sum, [key]) => sum + (config.edgeWeights[key as keyof EdgeSignals] ?? 1),
+    0
+  );
+  const qualityScore = totalWeight > 0 ? Math.pow(product, 1 / totalWeight) : 1;
+  return { feasible: true, qualityScore };
 }
 
 // Only signals with a real linear 0-1-ish numeric scale are scored here
@@ -47,11 +56,14 @@ export function evaluateEdge(edge: TransitionEdge, config: PlannerConfig): EdgeE
 // scalar; a nonzero nodeWeight on one of them contributes 0, never NaN —
 // see docs/superpowers/plans/2026-08-08-phase3-scoring-engine.md's Global
 // Constraints for why this deviates from implementation.md §7.3's literal
-// snippet.
+// snippet. bpm (~60-200) and loudnessLufs (~-30..0) are NOT naturally 0-1,
+// so they are explicitly normalized to [0,1] here (rather than passed
+// through raw) to keep calibrate()'s neutral=0.5 lerp meaningful and to
+// keep node weights comparable across signals.
 const NODE_TO_SCALAR: Partial<Record<keyof NodeSignals, (value: number) => number>> = {
-  bpm: (v) => v,
+  bpm: (v) => Math.min(Math.max(v / 200, 0), 1),
   energy: (v) => v,
-  loudnessLufs: (v) => v,
+  loudnessLufs: (v) => Math.min(Math.max((v + 30) / 30, 0), 1),
   guitarPresence: (v) => v,
   vocalPresence: (v) => v,
   danceability: (v) => v,
@@ -70,7 +82,12 @@ export function evaluateNode(node: ChunkNode, config: PlannerConfig): number {
 
 export function evaluatePath(resources: SearchResources, config: PlannerConfig): number {
   const durationDelta = Math.abs(resources.elapsedDurationBucket - config.targetDurationSec);
-  const durationScore = 1 - Math.min(durationDelta / config.durationToleranceSec, 1);
+  // durationToleranceSec === 0 would otherwise divide by zero (and 0/0 -> NaN
+  // when durationDelta is also 0); an exact match still scores 1, anything
+  // else scores 0 since there's no tolerance window to fall inside of.
+  const durationScore = config.durationToleranceSec > 0
+    ? 1 - Math.min(durationDelta / config.durationToleranceSec, 1)
+    : (durationDelta === 0 ? 1 : 0);
 
   const targetEnergy = sampleEnergyCurve(
     config.targetEnergyCurve,

@@ -123,6 +123,37 @@ describe('evaluateEdge()', () => {
     expect(harsherEmbedding.feasible).toBe(true);
     expect(harsherEmbedding.qualityScore).toBeLessThan(defaultWeights.qualityScore);
   });
+
+  it('excludes a zero-weighted dimension from the geometric mean root, rather than counting it as a perfect score against a fixed root', () => {
+    const excludedEmbedding = evaluateEdge(
+      byPair('A1', 'A2'),
+      baseConfig({ edgeWeights: baseEdgeWeights({ embeddingSimilarity: 0 }) })
+    );
+    // A1->A2 calibrated (confidence=1, so raw passes through unchanged):
+    // bpmDelta=1, keyCompatibility=1, beatAlignment=0.95, loudnessDelta=0.95.
+    // embeddingSimilarity is excluded (weight 0), so the correct root is
+    // 1/totalWeight == 1/4 (the four remaining dimensions), not the old
+    // fixed 1/5 that counted embeddingSimilarity's v^0=1 term toward the mean.
+    const expected = Math.pow(1 * 1 * 0.95 * 0.95, 1 / 4);
+    expect(excludedEmbedding.qualityScore).toBeCloseTo(expected);
+    // Sanity: this must differ from what the old buggy fixed-root-of-5 formula
+    // would have produced for the same weights.
+    const oldBuggyValue = Math.pow(1 * 1 * 0.95 * 1 * 0.95, 1 / 5);
+    expect(excludedEmbedding.qualityScore).not.toBeCloseTo(oldBuggyValue, 3);
+  });
+
+  it('is scale-invariant: uniformly scaling all edgeWeights does not change qualityScore', () => {
+    const base = evaluateEdge(byPair('A1', 'A2'), baseConfig());
+    const scaled = evaluateEdge(
+      byPair('A1', 'A2'),
+      baseConfig({
+        edgeWeights: baseEdgeWeights({
+          bpmDelta: 3, keyCompatibility: 3, beatAlignment: 3, embeddingSimilarity: 3, loudnessDelta: 3,
+        }),
+      })
+    );
+    expect(scaled.qualityScore).toBeCloseTo(base.qualityScore);
+  });
 });
 
 function nodeWeights(overrides: Partial<Record<string, number>> = {}) {
@@ -163,6 +194,16 @@ describe('evaluateNode()', () => {
     // A2: energy=0.5, danceability=0.6, both confidence 1 -> calibrated == raw
     expect(evaluateNode(a2, config)).toBeCloseTo(0.5 + 0.6);
   });
+
+  it('normalizes bpm and loudnessLufs to a bounded [0,1] range before scoring', () => {
+    const bpmConfig = baseConfig({ nodeWeights: nodeWeights({ bpm: 1 }) });
+    const loudnessConfig = baseConfig({ nodeWeights: nodeWeights({ loudnessLufs: 1 }) });
+    // A2 fixture: bpm=124, loudnessLufs=-14, confidence=1 (calibrate is identity at confidence 1)
+    expect(evaluateNode(a2, bpmConfig)).toBeCloseTo(124 / 200);
+    expect(evaluateNode(a2, loudnessConfig)).toBeCloseTo((-14 + 30) / 30);
+    expect(evaluateNode(a2, bpmConfig)).toBeLessThanOrEqual(1);
+    expect(evaluateNode(a2, loudnessConfig)).toBeLessThanOrEqual(1);
+  });
 });
 
 function baseResources(overrides: Partial<SearchResources> = {}): SearchResources {
@@ -192,6 +233,13 @@ describe('sampleEnergyCurve()', () => {
     const curve = [0.2, 0.5, 0.8];
     expect(sampleEnergyCurve(curve, -1)).toBe(0.2);
     expect(sampleEnergyCurve(curve, 2)).toBe(0.8);
+  });
+});
+
+describe('sampleEnergyCurve() edge cases', () => {
+  it('returns a neutral fallback for an empty curve instead of NaN', () => {
+    expect(sampleEnergyCurve([], 0.5)).toBe(0.5);
+    expect(Number.isNaN(sampleEnergyCurve([], 0.5))).toBe(false);
   });
 });
 
@@ -241,5 +289,19 @@ describe('evaluatePath()', () => {
       pathObjectiveWeights: { durationAdherence: 0, energyCurveAdherence: 0, diversity: 1, repetitionPenalty: 0 },
     });
     expect(evaluatePath(resources, configA)).not.toBeCloseTo(evaluatePath(resources, configB));
+  });
+});
+
+describe('evaluatePath() edge cases', () => {
+  it('does not produce NaN when durationToleranceSec is 0 and elapsed matches target exactly', () => {
+    const resources = baseResources({ elapsedDurationBucket: 1800 });
+    const config = baseConfig({ targetDurationSec: 1800, durationToleranceSec: 0, targetEnergyCurve: [0.5] });
+    expect(Number.isNaN(evaluatePath(resources, config))).toBe(false);
+  });
+
+  it('does not produce NaN when durationToleranceSec is 0 and elapsed misses target', () => {
+    const resources = baseResources({ elapsedDurationBucket: 900 });
+    const config = baseConfig({ targetDurationSec: 1800, durationToleranceSec: 0, targetEnergyCurve: [0.5] });
+    expect(Number.isNaN(evaluatePath(resources, config))).toBe(false);
   });
 });
